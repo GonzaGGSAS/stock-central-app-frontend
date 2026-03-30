@@ -362,8 +362,11 @@ function LinkVariantModal({ sku, onClose, onLinked }) {
   const filteredProducts = products.map((p: any) => {
     const pName = p.name?.es || p.name || "";
     const filteredVariants = (p.variants || []).filter(v => {
+      if (!q) return true;
       const varLabel = v.values?.map(vv => vv.es || vv.en || Object.values(vv)[0]).join(" / ") || "";
-      return !q || pName.toLowerCase().includes(q) || varLabel.toLowerCase().includes(q) || (v.sku || "").toLowerCase().includes(q);
+      const combined = `${pName} ${varLabel} ${v.sku || ""}`.toLowerCase();
+      const words = q.split(/\s+/).filter(Boolean);
+      return words.every(word => combined.includes(word));
     });
     return { ...p, variants: filteredVariants };
   }).filter((p: any) => p.variants.length > 0);
