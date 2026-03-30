@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 const API = "https://stock-central-production.up.railway.app/api";
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
-async function api(method, path, body) {
+async function api(method, path, body?) {
   const res = await fetch(`${API}${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
@@ -126,7 +126,7 @@ function ConfigView({ onSaved }) {
     } catch (e) { setResult({ ok: false, msg: e.message }); }
   }
 
-  const inp = { background: "#1e293b", border: "1px solid #334155", borderRadius: 6, padding: "10px 12px", color: "#f8fafc", width: "100%", fontSize: 13, outline: "none", boxSizing: "border-box" };
+  const inp = { background: "#1e293b", border: "1px solid #334155", borderRadius: 6, padding: "10px 12px", color: "#f8fafc", width: "100%", fontSize: 13, outline: "none", boxSizing: "border-box" as const };
   const lbl = { display: "block", color: "#94a3b8", fontSize: 12, marginBottom: 6, fontWeight: 600, letterSpacing: "0.05em" };
 
   return (
@@ -163,9 +163,6 @@ function ConfigView({ onSaved }) {
         <h3 style={{ color: "#60a5fa", margin: "0 0 16px", fontSize: 14, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
           2 · Webhook (para sync automático)
         </h3>
-        <p style={{ color: "#64748b", fontSize: 13, marginTop: 0 }}>
-          Usá <strong style={{ color: "#94a3b8" }}>ngrok</strong> o deployá en Railway/Render y pegá la URL pública del servidor aquí.
-        </p>
         <div style={{ marginBottom: 14 }}>
           <label style={lbl}>URL PÚBLICA DEL SERVIDOR</label>
           <input style={inp} placeholder="https://tu-app.railway.app" value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} />
@@ -180,15 +177,6 @@ function ConfigView({ onSaved }) {
           {result.msg}
         </div>
       )}
-
-      <div style={{ marginTop: 20, padding: 16, background: "#0a0f1a", borderRadius: 8, border: "1px solid #1e293b" }}>
-        <p style={{ color: "#64748b", fontSize: 12, margin: 0, lineHeight: 1.7 }}>
-          <strong style={{ color: "#94a3b8" }}>¿Cómo obtener las credenciales?</strong><br />
-          1. Entrá a <strong style={{ color: "#60a5fa" }}>partners.tiendanube.com</strong><br />
-          2. Creá una app privada o usá una existente<br />
-          3. Instalala en tu tienda → obtenés el <code style={{ color: "#fbbf24" }}>access_token</code> y el <code style={{ color: "#fbbf24" }}>user_id</code> (= store_id)
-        </p>
-      </div>
     </div>
   );
 }
@@ -210,7 +198,7 @@ function CreateSkuModal({ onClose, onCreated }) {
     setLoading(false);
   }
 
-  const inp = { background: "#1e293b", border: "1px solid #334155", borderRadius: 6, padding: "10px 12px", color: "#f8fafc", width: "100%", fontSize: 13, outline: "none", boxSizing: "border-box" };
+  const inp = { background: "#1e293b", border: "1px solid #334155", borderRadius: 6, padding: "10px 12px", color: "#f8fafc", width: "100%", fontSize: 13, outline: "none", boxSizing: "border-box" as const };
 
   return (
     <Modal title="Nuevo SKU" onClose={onClose}>
@@ -237,7 +225,7 @@ function CreateSkuModal({ onClose, onCreated }) {
 }
 
 function AdjustStockModal({ sku, current, onClose, onAdjusted }) {
-  const [mode, setMode] = useState("add"); // add | subtract | set
+  const [mode, setMode] = useState("add");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [sync, setSync] = useState(true);
@@ -248,7 +236,7 @@ function AdjustStockModal({ sku, current, onClose, onAdjusted }) {
     if (isNaN(n) || n < 0) return;
     setLoading(true);
     try {
-      let body = { reason, sync };
+      let body: any = { reason, sync };
       if (mode === "set") body.absolute = n;
       else body.delta = mode === "add" ? n : -n;
       const r = await api("PUT", `/skus/${sku}/stock`, body);
@@ -317,10 +305,11 @@ function AdjustStockModal({ sku, current, onClose, onAdjusted }) {
   );
 }
 
+// ─── MODAL VINCULAR VARIANTE (selección múltiple) ─────────────────────────────
 function LinkVariantModal({ sku, onClose, onLinked }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState<Record<string, { product_id: string; variant_id: string; label: string }>>({});
   const [linking, setLinking] = useState(false);
   const [err, setErr] = useState("");
   const [search, setSearch] = useState("");
@@ -329,56 +318,95 @@ function LinkVariantModal({ sku, onClose, onLinked }) {
     api("GET", "/products").then(data => {
       setProducts(Array.isArray(data) ? data : []);
       setLoading(false);
-    }).catch(e => {
+    }).catch(() => {
       setErr("No se pudieron cargar los productos.");
       setLoading(false);
     });
   }, []);
 
-  async function handleLink() {
-    if (!selected) return;
-    setLinking(true);
-    try {
-      await api("POST", `/skus/${sku}/variants`, selected);
-      onLinked(selected);
-    } catch (e) { setErr(e.message); }
-    setLinking(false);
+  function toggleVariant(productId: string, variantId: string, label: string) {
+    setSelected(prev => {
+      const next = { ...prev };
+      if (next[variantId]) {
+        delete next[variantId];
+      } else {
+        next[variantId] = { product_id: productId, variant_id: variantId, label };
+      }
+      return next;
+    });
   }
 
+  async function handleLink() {
+    const items = Object.values(selected);
+    if (items.length === 0) return;
+    setLinking(true);
+    const errors: string[] = [];
+    for (const item of items) {
+      try {
+        await api("POST", `/skus/${sku}/variants`, item);
+      } catch (e: any) {
+        errors.push(`${item.label}: ${e.message}`);
+      }
+    }
+    setLinking(false);
+    if (errors.length > 0) {
+      setErr(errors.join(" | "));
+    } else {
+      onLinked(items);
+    }
+  }
+
+  const selectedCount = Object.keys(selected).length;
+
   const q = search.toLowerCase();
-  const filteredProducts = products.map(p => {
+  const filteredProducts = products.map((p: any) => {
     const pName = p.name?.es || p.name || "";
     const filteredVariants = (p.variants || []).filter(v => {
       const varLabel = v.values?.map(vv => vv.es || vv.en || Object.values(vv)[0]).join(" / ") || "";
       return !q || pName.toLowerCase().includes(q) || varLabel.toLowerCase().includes(q) || (v.sku || "").toLowerCase().includes(q);
     });
     return { ...p, variants: filteredVariants };
-  }).filter(p => p.variants.length > 0);
+  }).filter((p: any) => p.variants.length > 0);
 
   return (
-    <Modal title={`Vincular variante → ${sku}`} onClose={onClose}>
+    <Modal title={`Vincular variantes → ${sku}`} onClose={onClose}>
       <input
         autoFocus
         style={{ width: "100%", background: "#1e293b", border: "1px solid #334155", borderRadius: 6, padding: "9px 12px", color: "#f8fafc", fontSize: 13, outline: "none", boxSizing: "border-box", marginBottom: 12 }}
         placeholder="Buscar por producto, variante o SKU..."
         value={search} onChange={e => setSearch(e.target.value)}
       />
+
+      {/* Contador de seleccionados */}
+      {selectedCount > 0 && (
+        <div style={{ marginBottom: 10, padding: "8px 12px", background: "#0d1a2e", border: "1px solid #1e3a5f", borderRadius: 6, color: "#60a5fa", fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>{selectedCount} variante{selectedCount !== 1 ? "s" : ""} seleccionada{selectedCount !== 1 ? "s" : ""}</span>
+          <button onClick={() => setSelected({})} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 12 }}>Limpiar</button>
+        </div>
+      )}
+
       {loading && <p style={{ color: "#64748b", textAlign: "center" }}>Cargando productos...</p>}
       {err && <p style={{ color: "#f87171", fontSize: 13 }}>{err}</p>}
       {!loading && filteredProducts.length === 0 && !err && (
         <p style={{ color: "#64748b", textAlign: "center" }}>No se encontraron resultados</p>
       )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflowY: "auto" }}>
-        {filteredProducts.map(p => (
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 340, overflowY: "auto" }}>
+        {filteredProducts.map((p: any) => (
           <div key={p.id}>
             <div style={{ color: "#94a3b8", fontSize: 11, padding: "6px 0 4px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
               {p.name?.es || p.name || `Producto ${p.id}`}
             </div>
             {(p.variants || []).map(v => {
-              const label = `${p.name?.es || p.name} · ${v.values?.map(vv => vv.es || vv.en || Object.values(vv)[0]).join(" / ") || v.sku || v.id}`;
-              const isSelected = selected?.variant_id === String(v.id);
+              const variantId = String(v.id);
+              const productId = String(p.id);
+              const varLabel = v.values?.map(vv => vv.es || vv.en || Object.values(vv)[0]).join(" / ") || `Variante ${v.id}`;
+              const label = `${p.name?.es || p.name} · ${varLabel}`;
+              const isSelected = !!selected[variantId];
+
               return (
-                <div key={v.id} onClick={() => setSelected({ product_id: String(p.id), variant_id: String(v.id), label })}
+                <div key={v.id}
+                  onClick={() => toggleVariant(productId, variantId, label)}
                   style={{
                     padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 13,
                     background: isSelected ? "#1e3a5f" : "#1e293b",
@@ -386,7 +414,17 @@ function LinkVariantModal({ sku, onClose, onLinked }) {
                     color: isSelected ? "#60a5fa" : "#94a3b8",
                     marginBottom: 4, display: "flex", justifyContent: "space-between", alignItems: "center"
                   }}>
-                  <span>{v.values?.map(vv => vv.es || vv.en || Object.values(vv)[0]).join(" / ") || `Variante ${v.id}`}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {/* Checkbox visual */}
+                    <div style={{
+                      width: 16, height: 16, borderRadius: 4, border: `2px solid ${isSelected ? "#3b82f6" : "#475569"}`,
+                      background: isSelected ? "#3b82f6" : "transparent",
+                      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+                    }}>
+                      {isSelected && <span style={{ color: "#fff", fontSize: 10, lineHeight: 1 }}>✓</span>}
+                    </div>
+                    <span>{varLabel}</span>
+                  </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     {v.sku && <span style={{ fontFamily: "monospace", fontSize: 11, color: "#64748b" }}>{v.sku}</span>}
                     <span style={{ fontFamily: "monospace", fontSize: 12 }}>stock: {v.stock ?? "∞"}</span>
@@ -397,14 +435,20 @@ function LinkVariantModal({ sku, onClose, onLinked }) {
           </div>
         ))}
       </div>
-      {selected && (
-        <div style={{ marginTop: 12, padding: 10, background: "#0d1a2e", border: "1px solid #1e3a5f", borderRadius: 6, color: "#60a5fa", fontSize: 13 }}>
-          Seleccionado: {selected.label}
-        </div>
-      )}
+
       {err && <div style={{ marginTop: 8, color: "#f87171", fontSize: 13 }}>{err}</div>}
-      <button onClick={handleLink} disabled={linking || !selected} style={{ marginTop: 14, padding: "12px 0", width: "100%", background: "#3b82f6", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
-        {linking ? "Vinculando..." : "Vincular variante"}
+
+      <button
+        onClick={handleLink}
+        disabled={linking || selectedCount === 0}
+        style={{
+          marginTop: 14, padding: "12px 0", width: "100%",
+          background: selectedCount > 0 ? "#3b82f6" : "#1e293b",
+          color: selectedCount > 0 ? "#fff" : "#475569",
+          border: "none", borderRadius: 6, cursor: selectedCount > 0 ? "pointer" : "not-allowed",
+          fontWeight: 700, fontSize: 14
+        }}>
+        {linking ? "Vinculando..." : selectedCount > 0 ? `Vincular ${selectedCount} variante${selectedCount !== 1 ? "s" : ""}` : "Seleccioná al menos una variante"}
       </button>
     </Modal>
   );
@@ -445,7 +489,6 @@ function SkuCard({ sku: skuData, onRefresh, onToast }) {
   return (
     <>
       <div style={{ background: "#0f172a", border: `1px solid ${expanded ? "#334155" : "#1e293b"}`, borderRadius: 12, overflow: "hidden", transition: "border-color 0.2s" }}>
-        {/* Header */}
         <div style={{ padding: "16px 20px", cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }} onClick={() => setExpanded(!expanded)}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: stockColor, flexShrink: 0, boxShadow: `0 0 8px ${stockColor}` }} />
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -461,7 +504,6 @@ function SkuCard({ sku: skuData, onRefresh, onToast }) {
           </div>
         </div>
 
-        {/* Actions bar */}
         <div style={{ padding: "0 20px 14px", display: "flex", gap: 8 }}>
           <button onClick={() => setShowAdjust(true)} style={{ padding: "6px 12px", background: "#1e293b", color: "#94a3b8", border: "1px solid #334155", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
             ± Ajustar stock
@@ -477,10 +519,8 @@ function SkuCard({ sku: skuData, onRefresh, onToast }) {
           </button>
         </div>
 
-        {/* Expanded content */}
         {expanded && (
           <div style={{ borderTop: "1px solid #1e293b", padding: "16px 20px" }}>
-            {/* Variants */}
             <div style={{ marginBottom: 16 }}>
               <div style={{ color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Variantes vinculadas</div>
               {skuData.variants.length === 0 ? (
@@ -498,7 +538,6 @@ function SkuCard({ sku: skuData, onRefresh, onToast }) {
               )}
             </div>
 
-            {/* Log */}
             <div>
               <div style={{ color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Últimos movimientos</div>
               {(skuData.log || []).slice(0, 8).map((l, i) => (
@@ -531,20 +570,24 @@ function SkuCard({ sku: skuData, onRefresh, onToast }) {
 
       {showLink && <LinkVariantModal sku={skuData.sku}
         onClose={() => setShowLink(false)}
-        onLinked={() => { onRefresh(); setShowLink(false); onToast("Variante vinculada", "success"); }} />}
+        onLinked={(items) => {
+          onRefresh();
+          setShowLink(false);
+          onToast(`${items.length} variante${items.length !== 1 ? "s" : ""} vinculada${items.length !== 1 ? "s" : ""}`, "success");
+        }} />}
     </>
   );
 }
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [view, setView] = useState("loading"); // loading | config | dashboard
+  const [view, setView] = useState("loading");
   const [skus, setSkus] = useState([]);
   const [stats, setStats] = useState(null);
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [toast, setToast] = useState(null);
-  const [sortBy, setSortBy] = useState("sku"); // sku | stock | variants
+  const [sortBy, setSortBy] = useState("sku");
 
   const showToast = useCallback((msg, type = "success") => {
     setToast({ msg, type });
@@ -573,14 +616,13 @@ export default function App() {
   }, [loadData]);
 
   const filtered = skus
-    .filter(s => !search || s.sku.toLowerCase().includes(search.toLowerCase()) || s.description?.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => {
+    .filter((s: any) => !search || s.sku.toLowerCase().includes(search.toLowerCase()) || s.description?.toLowerCase().includes(search.toLowerCase()))
+    .sort((a: any, b: any) => {
       if (sortBy === "stock") return a.stock_central - b.stock_central;
       if (sortBy === "variants") return b.variants.length - a.variants.length;
       return a.sku.localeCompare(b.sku);
     });
 
-  // ─── LOADING ───────────────────────────────────────────────────────────────
   if (view === "loading") {
     return (
       <div style={{ minHeight: "100vh", background: "#020817", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -591,7 +633,6 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#020817", color: "#f8fafc", fontFamily: "'DM Mono', 'Fira Code', 'Courier New', monospace" }}>
-      {/* Header */}
       <div style={{ borderBottom: "1px solid #1e293b", padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 56 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 28, height: 28, background: "linear-gradient(135deg, #3b82f6, #06b6d4)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📦</div>
@@ -617,7 +658,6 @@ export default function App() {
 
         {view === "dashboard" && (
           <>
-            {/* Stats */}
             {stats && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
                 {[
@@ -634,7 +674,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Toolbar */}
             <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
               <input
                 style={{ flex: 1, background: "#0f172a", border: "1px solid #1e293b", borderRadius: 6, padding: "9px 14px", color: "#f8fafc", fontSize: 13, outline: "none", fontFamily: "inherit" }}
@@ -652,7 +691,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* SKU List */}
             {filtered.length === 0 ? (
               <div style={{ textAlign: "center", padding: "60px 20px", color: "#334155" }}>
                 {skus.length === 0 ? (
@@ -665,17 +703,16 @@ export default function App() {
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {filtered.map(s => (
+                {filtered.map((s: any) => (
                   <SkuCard key={s.sku} sku={s} onRefresh={loadData} onToast={showToast} />
                 ))}
               </div>
             )}
 
-            {/* Recent log */}
             {stats?.recent_log?.length > 0 && (
               <div style={{ marginTop: 28, background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, padding: 20 }}>
                 <div style={{ color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>Actividad reciente</div>
-                {stats.recent_log.map((l, i) => (
+                {stats.recent_log.map((l: any, i: number) => (
                   <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "6px 0", borderBottom: i < stats.recent_log.length - 1 ? "1px solid #1e293b" : "none" }}>
                     <span style={{ color: "#475569", fontSize: 11, fontFamily: "monospace", minWidth: 90 }}>{fmt(l.ts)}</span>
                     <span style={{ fontFamily: "monospace", fontSize: 12, color: "#60a5fa", minWidth: 100 }}>{l.sku}</span>
