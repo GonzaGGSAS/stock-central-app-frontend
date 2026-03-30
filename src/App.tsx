@@ -313,6 +313,9 @@ function LinkVariantModal({ sku, onClose, onLinked }) {
   const [linking, setLinking] = useState(false);
   const [err, setErr] = useState("");
   const [search, setSearch] = useState("");
+  const [talleFilter, setTalleFilter] = useState("");
+
+  const TALLES = ["XS", "S", "S/M", "M", "M/L", "L", "L/XL", "XL", "XXL", "0", "1", "2", "3", "4"];
 
   useEffect(() => {
     api("GET", "/products").then(data => {
@@ -323,6 +326,12 @@ function LinkVariantModal({ sku, onClose, onLinked }) {
       setLoading(false);
     });
   }, []);
+
+  function matchesTalle(varLabel: string, talle: string): boolean {
+    if (!talle) return true;
+    const parts = varLabel.split(/[\s\/\-,]+/).map(p => p.trim().toUpperCase());
+    return parts.includes(talle.toUpperCase());
+  }
 
   function toggleVariant(productId: string, variantId: string, label: string) {
     setSelected(prev => {
@@ -362,23 +371,38 @@ function LinkVariantModal({ sku, onClose, onLinked }) {
   const filteredProducts = products.map((p: any) => {
     const pName = p.name?.es || p.name || "";
     const filteredVariants = (p.variants || []).filter(v => {
-      if (!q) return true;
       const varLabel = v.values?.map(vv => vv.es || vv.en || Object.values(vv)[0]).join(" / ") || "";
-      const combined = `${pName} ${varLabel} ${v.sku || ""}`.toLowerCase();
-      const words = q.split(/\s+/).filter(Boolean);
-      return words.every(word => combined.includes(word));
+      // Filtro por texto
+      if (q) {
+        const combined = `${pName} ${varLabel} ${v.sku || ""}`.toLowerCase();
+        const words = q.split(/\s+/).filter(Boolean);
+        if (!words.every(word => combined.includes(word))) return false;
+      }
+      // Filtro por talle (estricto)
+      if (talleFilter && !matchesTalle(varLabel, talleFilter)) return false;
+      return true;
     });
     return { ...p, variants: filteredVariants };
   }).filter((p: any) => p.variants.length > 0);
 
   return (
     <Modal title={`Vincular variantes → ${sku}`} onClose={onClose}>
-      <input
-        autoFocus
-        style={{ width: "100%", background: "#1e293b", border: "1px solid #334155", borderRadius: 6, padding: "9px 12px", color: "#f8fafc", fontSize: 13, outline: "none", boxSizing: "border-box", marginBottom: 12 }}
-        placeholder="Buscar por producto, variante o SKU..."
-        value={search} onChange={e => setSearch(e.target.value)}
-      />
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <input
+          autoFocus
+          style={{ flex: 1, background: "#1e293b", border: "1px solid #334155", borderRadius: 6, padding: "9px 12px", color: "#f8fafc", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+          placeholder="Buscar por producto, variante o SKU..."
+          value={search} onChange={e => setSearch(e.target.value)}
+        />
+        <select
+          value={talleFilter}
+          onChange={e => setTalleFilter(e.target.value)}
+          style={{ padding: "9px 10px", background: "#1e293b", border: `1px solid ${talleFilter ? "#3b82f6" : "#334155"}`, borderRadius: 6, color: talleFilter ? "#60a5fa" : "#64748b", fontSize: 12, outline: "none", cursor: "pointer", minWidth: 80 }}
+        >
+          <option value="">Talle</option>
+          {TALLES.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
 
       {/* Contador de seleccionados */}
       {selectedCount > 0 && (
