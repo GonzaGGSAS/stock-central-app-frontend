@@ -39,11 +39,28 @@ type Variante = { id: string; label: string; stock: number; links: Link[]; log: 
 type Producto = { id: string; nombre: string; variantes: Variante[] };
 type Stats = { total_productos: number; total_variantes: number; total_links: number; stock_bajo: number; sin_stock: number; recent_log: (LogEntry & { producto: string; variante: string })[] };
 
+// ── Barra de progreso ────────────────────────────────────────────────────────
+function ProgressBar({ current, total, label }: { current: number; total: number; label: string }) {
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  return (
+    <div style={{ background: "#0a1628", border: "1px solid #1e3a5f", borderRadius: 8, padding: "12px 14px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <span style={{ color: "#94a3b8", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "75%" }}>{label}</span>
+        <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 13, color: "#60a5fa", flexShrink: 0 }}>{current} / {total}</span>
+      </div>
+      <div style={{ height: 6, background: "#1e293b", borderRadius: 3, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${pct}%`, background: "linear-gradient(90deg, #3b82f6, #06b6d4)", borderRadius: 3, transition: "width 0.2s ease" }} />
+      </div>
+      <div style={{ marginTop: 5, textAlign: "right", fontSize: 11, color: "#475569", fontFamily: "monospace" }}>{pct}%</div>
+    </div>
+  );
+}
+
 function Toast({ msg, type, onClose }: { msg: string; type: string; onClose: () => void }) {
   useEffect(() => { const t = setTimeout(onClose, 3500); return () => clearTimeout(t); }, [onClose]);
   const color = type === "error" ? "#ef4444" : "#22c55e";
   return <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 999, background: "#0f172a", border: `1px solid ${color}`, borderRadius: 8, padding: "12px 18px", color: "#f8fafc", fontSize: 14, maxWidth: 340, display: "flex", gap: 10 }}>
-    <span style={{ color }}>{type === "error" ? "⚠" : "✓"}</span>{msg}
+    <span style={{ color }}>{type === "error" ? "!" : "v"}</span>{msg}
   </div>;
 }
 
@@ -141,12 +158,13 @@ function AdjustStockModal({ productoId, variante, onClose, onAdjusted }: { produ
   </Modal>;
 }
 
+// ── Modal: Vincular (seleccion multiple + progreso) ───────────────────────────
 function LinkModal({ productoId, variante, onClose, onLinked }: { productoId: string; variante: Variante; onClose: () => void; onLinked: () => void }) {
   const [tnProducts, setTnProducts] = useState<TnProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<{ product_id: string; variant_id: string; label: string }[]>([]);
-  const [linking, setLinking] = useState(false);
+  const [progress, setProgress] = useState<{ current: number; total: number; label: string } | null>(null);
   const [err, setErr] = useState("");
 
   useEffect(() => {
@@ -156,10 +174,7 @@ function LinkModal({ productoId, variante, onClose, onLinked }: { productoId: st
 
   const q = search.toLowerCase();
   const filtered = tnProducts
-    .filter(p => {
-      const pName = typeof p.name === "object" ? (p.name.es || "") : String(p.name);
-      return !EXCLUIR.test(pName);
-    })
+    .filter(p => { const pName = typeof p.name === "object" ? (p.name.es || "") : String(p.name); return !EXCLUIR.test(pName); })
     .map(p => {
       const pName = typeof p.name === "object" ? (p.name.es || "") : String(p.name);
       const fv = p.variants.filter(v => {
@@ -171,26 +186,20 @@ function LinkModal({ productoId, variante, onClose, onLinked }: { productoId: st
     .filter(p => p.variants.length > 0);
 
   function toggleVariant(product_id: string, variant_id: string, label: string) {
-    setSelected(prev => {
-      const exists = prev.some(s => s.variant_id === variant_id);
-      if (exists) return prev.filter(s => s.variant_id !== variant_id);
-      return [...prev, { product_id, variant_id, label }];
-    });
+    setSelected(prev => prev.some(s => s.variant_id === variant_id) ? prev.filter(s => s.variant_id !== variant_id) : [...prev, { product_id, variant_id, label }]);
   }
 
   async function handleLink() {
     if (selected.length === 0) return;
-    setLinking(true);
+    setProgress({ current: 0, total: selected.length, label: "Iniciando..." });
     let linked = 0;
-    for (const s of selected) {
-      try {
-        await api("POST", `/productos/${productoId}/variantes/${variante.id}/links`, s);
-        linked++;
-      } catch (_e) { }
+    for (let i = 0; i < selected.length; i++) {
+      const s = selected[i];
+      setProgress({ current: i, total: selected.length, label: `Vinculando: ${s.label}` });
+      try { await api("POST", `/productos/${productoId}/variantes/${variante.id}/links`, s); linked++; } catch (_e) { }
     }
-    setLinking(false);
-    if (linked > 0) onLinked();
-    else setErr("No se pudo vincular ninguna variante");
+    setProgress({ current: selected.length, total: selected.length, label: `Listo: ${linked} vinculada(s)` });
+    setTimeout(() => { if (linked > 0) onLinked(); else setErr("No se pudo vincular ninguna"); setProgress(null); }, 800);
   }
 
   return <Modal title={`Vincular "${variante.label}" a Tiendanube`} onClose={onClose} wide>
@@ -198,7 +207,7 @@ function LinkModal({ productoId, variante, onClose, onLinked }: { productoId: st
       value={search} onChange={e => setSearch(e.target.value)} />
     {loading && <p style={{ color: "#64748b", textAlign: "center" }}>Cargando productos...</p>}
     {err && <p style={{ color: "#f87171" }}>{err}</p>}
-    <div style={{ maxHeight: 380, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+    <div style={{ maxHeight: 340, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
       {filtered.map(p => <div key={p.id}>
         <div style={{ color: "#60a5fa", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "8px 0 4px" }}>{p._name}</div>
         {p.variants.map(v => {
@@ -207,8 +216,8 @@ function LinkModal({ productoId, variante, onClose, onLinked }: { productoId: st
           const isSel = selected.some(s => s.variant_id === String(v.id));
           const alreadyLinked = variante.links.some(l => l.variant_id === String(v.id));
           return <div key={v.id}
-            onClick={() => !alreadyLinked && toggleVariant(String(p.id), String(v.id), label)}
-            style={{ padding: "7px 12px", borderRadius: 6, cursor: alreadyLinked ? "default" : "pointer", fontSize: 13,
+            onClick={() => !alreadyLinked && !progress && toggleVariant(String(p.id), String(v.id), label)}
+            style={{ padding: "7px 12px", borderRadius: 6, cursor: alreadyLinked || progress ? "default" : "pointer", fontSize: 13,
               background: isSel ? "#1e3a5f" : alreadyLinked ? "#0d2e1a" : "#1e293b",
               border: `1px solid ${isSel ? "#3b82f6" : alreadyLinked ? "#166534" : "#334155"}`,
               color: isSel ? "#60a5fa" : alreadyLinked ? "#4ade80" : "#94a3b8",
@@ -227,19 +236,18 @@ function LinkModal({ productoId, variante, onClose, onLinked }: { productoId: st
         })}
       </div>)}
     </div>
-    {selected.length > 0 && (
+    {selected.length > 0 && !progress && (
       <div style={{ marginTop: 12, padding: 10, background: "#0d1a2e", border: "1px solid #1e3a5f", borderRadius: 6, fontSize: 13 }}>
-        <span style={{ color: "#60a5fa", fontWeight: 700 }}>{selected.length} seleccionada(s):</span>
+        <span style={{ color: "#60a5fa", fontWeight: 700 }}>{selected.length} seleccionada(s)</span>
         <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
-          {selected.map(s => (
-            <span key={s.variant_id} style={{ background: "#1e3a5f", border: "1px solid #3b82f6", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "#60a5fa" }}>{s.label}</span>
-          ))}
+          {selected.map(s => <span key={s.variant_id} style={{ background: "#1e3a5f", border: "1px solid #3b82f6", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "#60a5fa" }}>{s.label}</span>)}
         </div>
       </div>
     )}
+    {progress && <div style={{ marginTop: 12 }}><ProgressBar current={progress.current} total={progress.total} label={progress.label} /></div>}
     {err && <div style={{ marginTop: 8, color: "#f87171", fontSize: 13 }}>{err}</div>}
-    <button onClick={handleLink} disabled={linking || selected.length === 0} style={{ ...S.btn, marginTop: 14, width: "100%" }}>
-      {linking ? "Vinculando..." : `Vincular ${selected.length > 0 ? `${selected.length} variante(s)` : ""}`}
+    <button onClick={handleLink} disabled={!!progress || selected.length === 0} style={{ ...S.btn, marginTop: 14, width: "100%", opacity: progress ? 0.5 : 1 }}>
+      {progress ? `Vinculando ${progress.current}/${progress.total}...` : `Vincular ${selected.length > 0 ? `${selected.length} variante(s)` : ""}`}
     </button>
   </Modal>;
 }
@@ -270,10 +278,8 @@ function VarianteRow({ productoId, variante, onRefresh, onToast }: { productoId:
 
   async function handleDelete() {
     if (!confirm(`Eliminar variante "${variante.label}"?`)) return;
-    try {
-      await api("DELETE", `/productos/${productoId}/variantes/${variante.id}`);
-      onRefresh();
-    } catch (e: unknown) { onToast(e instanceof Error ? e.message : "Error", "error"); }
+    try { await api("DELETE", `/productos/${productoId}/variantes/${variante.id}`); onRefresh(); }
+    catch (e: unknown) { onToast(e instanceof Error ? e.message : "Error", "error"); }
   }
 
   return <>
@@ -283,7 +289,6 @@ function VarianteRow({ productoId, variante, onRefresh, onToast }: { productoId:
         <span style={{ fontFamily: "monospace", fontWeight: 700, color: "#f8fafc", fontSize: 13, flex: 1 }}>{variante.label}</span>
         <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 18, color: stockColor }}>{variante.stock}</span>
       </div>
-
       {variante.links.length > 0 && (
         <div style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
           {variante.links.map(l => (
@@ -294,17 +299,13 @@ function VarianteRow({ productoId, variante, onRefresh, onToast }: { productoId:
           ))}
         </div>
       )}
-
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <button onClick={() => setShowAdjust(true)} style={S.btnSm}>+/- Stock</button>
         <button onClick={() => setShowLink(true)} style={S.btnSm}>+ Vincular</button>
-        {variante.links.length > 0 && (
-          <button onClick={handleSync} disabled={syncing} style={S.btnGreen}>{syncing ? "..." : "Sync"}</button>
-        )}
+        {variante.links.length > 0 && <button onClick={handleSync} disabled={syncing} style={S.btnGreen}>{syncing ? "..." : "Sync"}</button>}
         <button onClick={() => setShowLog(!showLog)} style={S.btnSm}>Log</button>
         <button onClick={handleDelete} style={{ ...S.btnRed, marginLeft: "auto" }}>Eliminar</button>
       </div>
-
       {showLog && variante.log.length > 0 && (
         <div style={{ marginTop: 10, borderTop: "1px solid #1e293b", paddingTop: 10 }}>
           {variante.log.slice(0, 6).map((l, i) => (
@@ -319,29 +320,32 @@ function VarianteRow({ productoId, variante, onRefresh, onToast }: { productoId:
         </div>
       )}
     </div>
-
-    {showAdjust && <AdjustStockModal productoId={productoId} variante={variante}
-      onClose={() => setShowAdjust(false)} onAdjusted={() => { onRefresh(); onToast("Stock actualizado"); }} />}
-    {showLink && <LinkModal productoId={productoId} variante={variante}
-      onClose={() => setShowLink(false)} onLinked={() => { onRefresh(); setShowLink(false); onToast("Variante(s) vinculadas"); }} />}
+    {showAdjust && <AdjustStockModal productoId={productoId} variante={variante} onClose={() => setShowAdjust(false)} onAdjusted={() => { onRefresh(); onToast("Stock actualizado"); }} />}
+    {showLink && <LinkModal productoId={productoId} variante={variante} onClose={() => setShowLink(false)} onLinked={() => { onRefresh(); setShowLink(false); onToast("Variante(s) vinculadas"); }} />}
   </>;
 }
 
+// ── Card de Producto (Sync todo con progreso) ────────────────────────────────
 function ProductoCard({ producto, onRefresh, onToast }: { producto: Producto; onRefresh: () => void; onToast: (m: string, t?: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [showAddVar, setShowAddVar] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; label: string } | null>(null);
 
   const totalStock = producto.variantes.reduce((a, v) => a + v.stock, 0);
   const sinStock = producto.variantes.filter(v => v.stock === 0).length;
+  const variantesConLinks = producto.variantes.filter(v => v.links.length > 0);
 
   async function handleSyncAll() {
-    setSyncing(true);
-    try {
-      await api("POST", `/productos/${producto.id}/sync`);
-      onToast(`Sync completo: ${producto.nombre}`);
-    } catch (e: unknown) { onToast(e instanceof Error ? e.message : "Error", "error"); }
-    setSyncing(false);
+    if (variantesConLinks.length === 0) { onToast("No hay variantes vinculadas para sincronizar", "error"); return; }
+    setSyncProgress({ current: 0, total: variantesConLinks.length, label: "Iniciando sync..." });
+    let ok = 0;
+    for (let i = 0; i < variantesConLinks.length; i++) {
+      const v = variantesConLinks[i];
+      setSyncProgress({ current: i, total: variantesConLinks.length, label: `Sincronizando: ${v.label}` });
+      try { await api("POST", `/productos/${producto.id}/variantes/${v.id}/sync`); ok++; } catch (_e) { }
+    }
+    setSyncProgress({ current: variantesConLinks.length, total: variantesConLinks.length, label: `Completado: ${ok}/${variantesConLinks.length} OK` });
+    setTimeout(() => { setSyncProgress(null); onRefresh(); onToast(`Sync completo: ${ok} variante(s)`); }, 1200);
   }
 
   async function handleDelete() {
@@ -367,27 +371,28 @@ function ProductoCard({ producto, onRefresh, onToast }: { producto: Producto; on
         <span style={{ color: "#334155", fontSize: 16 }}>{expanded ? "^" : "v"}</span>
       </div>
 
-      <div style={{ padding: "0 20px 14px", display: "flex", gap: 8 }}>
-        <button onClick={() => { setShowAddVar(true); setExpanded(true); }} style={S.btnSm}>+ Variante</button>
-        <button onClick={handleSyncAll} disabled={syncing} style={S.btnGreen}>{syncing ? "Sincronizando..." : "Sync todo"}</button>
-        <button onClick={handleDelete} style={{ ...S.btnRed, marginLeft: "auto" }}>Eliminar</button>
+      <div style={{ padding: "0 20px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => { setShowAddVar(true); setExpanded(true); }} style={S.btnSm}>+ Variante</button>
+          <button onClick={handleSyncAll} disabled={!!syncProgress} style={{ ...S.btnGreen, opacity: syncProgress ? 0.6 : 1 }}>
+            {syncProgress ? `Sync ${syncProgress.current}/${syncProgress.total}` : "Sync todo"}
+          </button>
+          <button onClick={handleDelete} style={{ ...S.btnRed, marginLeft: "auto" }}>Eliminar</button>
+        </div>
+        {syncProgress && <ProgressBar current={syncProgress.current} total={syncProgress.total} label={syncProgress.label} />}
       </div>
 
       {expanded && (
         <div style={{ borderTop: "1px solid #1e293b", padding: "14px 20px" }}>
           {producto.variantes.length === 0 ? (
             <p style={{ color: "#334155", fontSize: 13, margin: 0 }}>Sin variantes</p>
-          ) : (
-            producto.variantes.map(v => (
-              <VarianteRow key={v.id} productoId={producto.id} variante={v} onRefresh={onRefresh} onToast={onToast} />
-            ))
-          )}
+          ) : producto.variantes.map(v => (
+            <VarianteRow key={v.id} productoId={producto.id} variante={v} onRefresh={onRefresh} onToast={onToast} />
+          ))}
         </div>
       )}
     </div>
-
-    {showAddVar && <AddVarianteModal productoId={producto.id}
-      onClose={() => setShowAddVar(false)} onAdded={() => { onRefresh(); setShowAddVar(false); onToast("Variante agregada"); }} />}
+    {showAddVar && <AddVarianteModal productoId={producto.id} onClose={() => setShowAddVar(false)} onAdded={() => { onRefresh(); setShowAddVar(false); onToast("Variante agregada"); }} />}
   </>;
 }
 
@@ -519,6 +524,7 @@ export default function App() {
   );
 }
 
+// ── Modal: Crear producto (con progreso) ──────────────────────────────────────
 function CreateProductoModal({ onClose, onCreated, showToast, loadTnProducts }: {
   onClose: () => void;
   onCreated: () => void;
@@ -531,57 +537,55 @@ function CreateProductoModal({ onClose, onCreated, showToast, loadTnProducts }: 
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<TnProduct | null>(null);
   const [nombre, setNombre] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [progress, setProgress] = useState<{ current: number; total: number; label: string } | null>(null);
 
   useEffect(() => {
-    loadTnProducts().then(data => { setTnProducts(data); setLoading(false); })
-      .catch(() => setLoading(false));
+    loadTnProducts().then(data => { setTnProducts(data); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
   const q = search.toLowerCase();
   const filtered = tnProducts
-    .filter(p => {
-      const n = typeof p.name === "object" ? (p.name.es || "") : String(p.name);
-      return !EXCLUIR.test(n);
-    })
-    .filter(p => {
-      const n = typeof p.name === "object" ? (p.name.es || "") : String(p.name);
-      return !q || n.toLowerCase().includes(q);
-    });
+    .filter(p => { const n = typeof p.name === "object" ? (p.name.es || "") : String(p.name); return !EXCLUIR.test(n); })
+    .filter(p => { const n = typeof p.name === "object" ? (p.name.es || "") : String(p.name); return !q || n.toLowerCase().includes(q); });
 
   function getPName(p: TnProduct) {
     return typeof p.name === "object" ? (p.name.es || `Producto ${p.id}`) : String(p.name);
   }
 
-  function handleSelect(p: TnProduct) {
-    setSelected(p);
-    setNombre(getPName(p));
-    setStep("confirm");
-  }
+  function handleSelect(p: TnProduct) { setSelected(p); setNombre(getPName(p)); setStep("confirm"); }
 
   async function handleCreate() {
     if (!selected || !nombre) return;
-    setCreating(true);
+    const variantesConStock = selected.variants.filter(v => v.stock !== null && v.stock > 0);
+    const totalPasos = 1 + variantesConStock.length * 2; // crear producto + (crear variante + vincular) x N
+    let paso = 0;
+
+    setProgress({ current: 0, total: totalPasos, label: "Creando producto..." });
     try {
       await api("POST", "/productos", { id: nombre, nombre });
+      paso++; setProgress({ current: paso, total: totalPasos, label: "Producto creado. Importando variantes..." });
+
       const pName = getPName(selected);
       const productoId = nombre.toUpperCase().replace(/\s+/g, "_");
-      const variantesConStock = selected.variants.filter(v => v.stock !== null && v.stock > 0);
+
       for (const v of variantesConStock) {
         const vLabel = v.values?.map(vv => Object.values(vv)[0]).join(" / ") || `Variante ${v.id}`;
+        setProgress({ current: paso, total: totalPasos, label: `Creando: ${vLabel}` });
         const nuevaVar = await api("POST", `/productos/${productoId}/variantes`, { label: vLabel, stock: v.stock });
+        paso++; setProgress({ current: paso, total: totalPasos, label: `Vinculando: ${vLabel}` });
         await api("POST", `/productos/${productoId}/variantes/${nuevaVar.id}/links`, {
-          product_id: String(selected.id),
-          variant_id: String(v.id),
-          label: `${pName} - ${vLabel}`
+          product_id: String(selected.id), variant_id: String(v.id), label: `${pName} - ${vLabel}`
         });
+        paso++;
       }
-      showToast(`Producto creado con ${variantesConStock.length} variante(s) importadas`);
-      onCreated();
+
+      setProgress({ current: totalPasos, total: totalPasos, label: `Listo! ${variantesConStock.length} variante(s) importadas` });
+      showToast(`Producto creado con ${variantesConStock.length} variante(s)`);
+      setTimeout(onCreated, 1000);
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : "Error", "error");
+      setProgress(null);
     }
-    setCreating(false);
   }
 
   const variantesConStock = selected?.variants.filter(v => v.stock !== null && v.stock > 0) || [];
@@ -591,11 +595,8 @@ function CreateProductoModal({ onClose, onCreated, showToast, loadTnProducts }: 
     <Modal title={step === "select" ? "Nuevo producto - Elegi el base" : `Confirmar: ${nombre}`} onClose={onClose} wide>
       {step === "select" ? (
         <>
-          <p style={{ color: "#64748b", fontSize: 13, marginTop: 0 }}>
-            Elegi el producto de Tiendanube base. Se importaran sus variantes y stock automaticamente.
-          </p>
-          <input autoFocus style={{ ...S.inp, marginBottom: 12 }}
-            placeholder="Buscar producto en Tiendanube..." value={search} onChange={e => setSearch(e.target.value)} />
+          <p style={{ color: "#64748b", fontSize: 13, marginTop: 0 }}>Elegi el producto de Tiendanube base. Se importaran sus variantes y stock automaticamente.</p>
+          <input autoFocus style={{ ...S.inp, marginBottom: 12 }} placeholder="Buscar producto en Tiendanube..." value={search} onChange={e => setSearch(e.target.value)} />
           {loading && <p style={{ color: "#64748b", textAlign: "center" }}>Cargando productos...</p>}
           <div style={{ maxHeight: 400, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
             {filtered.map(p => {
@@ -620,7 +621,7 @@ function CreateProductoModal({ onClose, onCreated, showToast, loadTnProducts }: 
         <>
           <div style={{ marginBottom: 16 }}>
             <label style={S.lbl}>NOMBRE EN STOCK CENTRAL</label>
-            <input style={S.inp} value={nombre} onChange={e => setNombre(e.target.value)} autoFocus />
+            <input style={S.inp} value={nombre} onChange={e => setNombre(e.target.value)} autoFocus disabled={!!progress} />
             <p style={{ color: "#475569", fontSize: 12, marginTop: 6 }}>Podes cambiarle el nombre. Ej: "BABY TEE"</p>
           </div>
           <div style={{ background: "#0a1628", border: "1px solid #1e293b", borderRadius: 8, padding: 14, marginBottom: 16 }}>
@@ -637,16 +638,13 @@ function CreateProductoModal({ onClose, onCreated, showToast, loadTnProducts }: 
               );
             })}
             {variantesConStock.length === 0 && <p style={{ color: "#475569", fontSize: 13, margin: 0 }}>Ninguna variante tiene stock</p>}
-            {variantesSinStock.length > 0 && (
-              <p style={{ color: "#475569", fontSize: 12, marginTop: 8, marginBottom: 0 }}>
-                {variantesSinStock.length} variante(s) sin stock no se importaran
-              </p>
-            )}
+            {variantesSinStock.length > 0 && <p style={{ color: "#475569", fontSize: 12, marginTop: 8, marginBottom: 0 }}>{variantesSinStock.length} variante(s) sin stock no se importaran</p>}
           </div>
+          {progress && <div style={{ marginBottom: 14 }}><ProgressBar current={progress.current} total={progress.total} label={progress.label} /></div>}
           <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={() => setStep("select")} style={S.btnSm}>Volver</button>
-            <button onClick={handleCreate} disabled={creating || !nombre} style={{ ...S.btn, flex: 1 }}>
-              {creating ? "Creando..." : `Crear e importar ${variantesConStock.length} variante(s)`}
+            <button onClick={() => setStep("select")} style={{ ...S.btnSm, opacity: progress ? 0.4 : 1 }} disabled={!!progress}>Volver</button>
+            <button onClick={handleCreate} disabled={!!progress || !nombre} style={{ ...S.btn, flex: 1, opacity: progress ? 0.6 : 1 }}>
+              {progress ? `Importando ${progress.current}/${progress.total}...` : `Crear e importar ${variantesConStock.length} variante(s)`}
             </button>
           </div>
         </>
