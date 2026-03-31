@@ -156,7 +156,11 @@ function LinkModal({ productoId, variante, onClose, onLinked }: { productoId: st
   }, []);
 
   const q = search.toLowerCase();
-  const filtered = tnProducts.map(p => {
+const EXCLUIR = /personaliz/i;
+const filtered = tnProducts.filter(p => {
+    const pName = typeof p.name === "object" ? (p.name.es || "") : p.name;
+    return !EXCLUIR.test(pName);
+  }).map(p => {
     const pName = typeof p.name === "object" ? (p.name.es || "") : p.name;
     const fv = p.variants.filter(v => {
       const vLabel = v.values?.map(vv => Object.values(vv)[0]).join(" / ") || "";
