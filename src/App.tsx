@@ -375,6 +375,7 @@ export default function App() {
   const [showCreate, setShowCreate] = useState(false);
   const [newNombre, setNewNombre] = useState("");
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);
+  const [tnProductsCache, setTnProductsCache] = useState<TnProduct[]>([]);
 
   const showToast = useCallback((msg: string, type = "success") => setToast({ msg, type }), []);
 
@@ -398,6 +399,13 @@ export default function App() {
       await api("POST", "/productos", { id: newNombre, nombre: newNombre });
       setNewNombre(""); setShowCreate(false); loadData();
     } catch (e: unknown) { showToast(e instanceof Error ? e.message : "Error", "error"); }
+  }
+
+  async function loadTnProducts() {
+    if (tnProductsCache.length > 0) return tnProductsCache;
+    const data = await api("GET", "/tn-products");
+    setTnProductsCache(data);
+    return data;
   }
 
   const filtered = productos.filter(p => !search || p.nombre.toLowerCase().includes(search.toLowerCase()) || p.id.toLowerCase().includes(search.toLowerCase()));
@@ -481,22 +489,165 @@ export default function App() {
 
       {/* Modal crear producto */}
       {showCreate && (
-        <Modal title="Nuevo producto" onClose={() => setShowCreate(false)}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div>
-              <label style={S.lbl}>NOMBRE DEL PRODUCTO</label>
-              <input style={S.inp} placeholder="ej: BABY TEE, HOODIE, GORRA..." value={newNombre} onChange={e => setNewNombre(e.target.value)} autoFocus
-                onKeyDown={e => e.key === "Enter" && handleCreateProducto()} />
-            </div>
-            <button onClick={handleCreateProducto} disabled={!newNombre} style={S.btn}>Crear producto</button>
-          </div>
-        </Modal>
+        <CreateProductoModal
+          onClose={() => { setShowCreate(false); setNewNombre(""); }}
+          onCreated={() => { setShowCreate(false); setNewNombre(""); loadData(); }}
+          showToast={showToast}
+          loadTnProducts={loadTnProducts}
+        />
       )}
 
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
 }
+
+// ── Modal: Crear producto desde Tiendanube ───────────────────────────────────
+function CreateProductoModal({ onClose, onCreated, showToast, loadTnProducts }: {
+  onClose: () => void;
+  onCreated: () => void;
+  showToast: (m: string, t?: string) => void;
+  loadTnProducts: () => Promise<TnProduct[]>;
+}) {
+  const [step, setStep] = useState<"select"|"confirm">("select");
+  const [tnProducts, setTnProducts] = useState<TnProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<TnProduct | null>(null);
+  const [nombre, setNombre] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    loadTnProducts().then(data => { setTnProducts(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const q = search.toLowerCase();
+  const filtered = tnProducts.filter(p => {
+    const n = typeof p.name === "object" ? (p.name.es || "") : String(p.name);
+    return !q || n.toLowerCase().includes(q);
+  });
+
+  function getPName(p: TnProduct) {
+    return typeof p.name === "object" ? (p.name.es || `Producto ${p.id}`) : String(p.name);
+  }
+
+  function handleSelect(p: TnProduct) {
+    setSelected(p);
+    setNombre(getPName(p));
+    setStep("confirm");
+  }
+
+  async function handleCreate() {
+    if (!selected || !nombre) return;
+    setCreating(true);
+    try {
+      // 1. Crear el producto en stock central
+      await api("POST", "/productos", { id: nombre, nombre });
+
+      const pName = getPName(selected);
+      const productoId = nombre.toUpperCase().replace(/\s+/g, "_");
+
+      // 2. Por cada variante con stock > 0, crear variante interna + vincularla
+      const variantesConStock = selected.variants.filter(v => v.stock !== null && v.stock > 0);
+      
+      for (const v of variantesConStock) {
+        const vLabel = v.values?.map(vv => Object.values(vv)[0]).join(" / ") || `Variante ${v.id}`;
+        // Crear variante interna
+        const nuevaVar = await api("POST", `/productos/${productoId}/variantes`, {
+          label: vLabel,
+          stock: v.stock
+        });
+        // Vincular al producto base de Tiendanube
+        await api("POST", `/productos/${productoId}/variantes/${nuevaVar.id}/links`, {
+          product_id: String(selected.id),
+          variant_id: String(v.id),
+          label: `${pName} · ${vLabel}`
+        });
+      }
+
+      showToast(`Producto creado con ${variantesConStock.length} variante(s) importadas`);
+      onCreated();
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : "Error", "error");
+    }
+    setCreating(false);
+  }
+
+  // Variantes con stock del producto seleccionado
+  const variantesConStock = selected?.variants.filter(v => v.stock !== null && v.stock > 0) || [];
+  const variantesSinStock = selected?.variants.filter(v => !v.stock || v.stock === 0) || [];
+
+  return (
+    <Modal title={step === "select" ? "Nuevo producto — Elegí el base" : `Confirmar: ${nombre}`} onClose={onClose} wide>
+      {step === "select" ? (
+        <>
+          <p style={{ color: "#64748b", fontSize: 13, marginTop: 0 }}>
+            Elegí el producto de Tiendanube que va a ser la base. Se importarán sus variantes y stock automáticamente.
+          </p>
+          <input autoFocus style={{ ...S.inp, marginBottom: 12 }}
+            placeholder="Buscar producto en Tiendanube..." value={search} onChange={e => setSearch(e.target.value)} />
+          {loading && <p style={{ color: "#64748b", textAlign: "center" }}>Cargando productos...</p>}
+          <div style={{ maxHeight: 400, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+            {filtered.map(p => {
+              const n = getPName(p);
+              const conStock = p.variants.filter(v => v.stock && v.stock > 0).length;
+              return (
+                <div key={p.id} onClick={() => handleSelect(p)}
+                  style={{ padding: "12px 14px", borderRadius: 8, cursor: "pointer", background: "#1e293b", border: "1px solid #334155", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = "#3b82f6")}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = "#334155")}>
+                  <div>
+                    <div style={{ color: "#f8fafc", fontWeight: 700, fontSize: 14 }}>{n}</div>
+                    <div style={{ color: "#64748b", fontSize: 12, marginTop: 2 }}>{p.variants.length} variantes totales · {conStock} con stock</div>
+                  </div>
+                  <span style={{ color: "#3b82f6", fontSize: 18 }}>→</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ marginBottom: 16 }}>
+            <label style={S.lbl}>NOMBRE EN STOCK CENTRAL</label>
+            <input style={S.inp} value={nombre} onChange={e => setNombre(e.target.value)} autoFocus />
+            <p style={{ color: "#475569", fontSize: 12, marginTop: 6 }}>Podés cambiarle el nombre. Ej: "BABY TEE" en vez del nombre largo de Tiendanube.</p>
+          </div>
+
+          <div style={{ background: "#0a1628", border: "1px solid #1e293b", borderRadius: 8, padding: 14, marginBottom: 16 }}>
+            <div style={{ color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+              Variantes que se importarán ({variantesConStock.length})
+            </div>
+            {variantesConStock.map(v => {
+              const vLabel = v.values?.map(vv => Object.values(vv)[0]).join(" / ") || `Variante ${v.id}`;
+              return (
+                <div key={v.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid #1e293b", fontSize: 13 }}>
+                  <span style={{ color: "#94a3b8" }}>{vLabel}</span>
+                  <span style={{ color: "#22c55e", fontFamily: "monospace", fontWeight: 700 }}>{v.stock}</span>
+                </div>
+              );
+            })}
+            {variantesConStock.length === 0 && <p style={{ color: "#475569", fontSize: 13, margin: 0 }}>Ninguna variante tiene stock — se creará el producto vacío</p>}
+            {variantesSinStock.length > 0 && (
+              <p style={{ color: "#475569", fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+                {variantesSinStock.length} variante(s) sin stock no se importarán (las podés agregar cuando tengan stock)
+              </p>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => setStep("select")} style={S.btnSm}>← Volver</button>
+            <button onClick={handleCreate} disabled={creating || !nombre} style={{ ...S.btn, flex: 1 }}>
+              {creating ? "Creando e importando..." : `Crear producto e importar ${variantesConStock.length} variante(s)`}
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
 
 function ConfigPanel({ onSaved }: { onSaved: () => void }) {
   const [token, setToken] = useState("");
