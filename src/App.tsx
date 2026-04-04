@@ -107,7 +107,7 @@ type LogEntry = { ts: string; action: string; stock: number; delta?: number; rea
 type Variante = { id: string; label: string; stock: number; links: Link[]; log: LogEntry[] };
 type Producto = { id: string; nombre: string; variantes: Variante[] };
 type Stats = { total_productos: number; total_variantes: number; total_links: number; stock_bajo: number; sin_stock: number; active_reservations: number; recent_log: (LogEntry & { producto: string; variante: string })[] };
-type Match = { id: string; nombre: string; producto1: { tn_product_id: string; nombre: string }; producto2: { tn_product_id: string; nombre: string }; createdAt: string };
+type Match = { id: string; nombre: string; tn_match_product_id: string; producto1: { tn_product_id: string; nombre: string }; producto2: { tn_product_id: string; nombre: string }; createdAt: string };
 
 // ── Progress Bar ──────────────────────────────────────────────────────────────
 function ProgressBar({ current, total, label }: { current: number; total: number; label: string }) {
@@ -799,6 +799,7 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [loading, setLoading] = useState(true);
   const [prod1, setProd1] = useState<TnProduct | null>(null);
   const [prod2, setProd2] = useState<TnProduct | null>(null);
+  const [matchProduct, setMatchProduct] = useState<TnProduct | null>(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
@@ -811,6 +812,7 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
   async function handle() {
     if (!nombre.trim()) return setErr("El nombre es obligatorio");
+    if (!matchProduct) return setErr("Seleccioná el producto contenedor del Match");
     if (!prod1) return setErr("Seleccioná el Producto 1");
     if (!prod2) return setErr("Seleccioná el Producto 2");
     if (prod1.id === prod2.id) return setErr("Los productos deben ser distintos");
@@ -818,6 +820,7 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
     try {
       const r = await api("POST", "/matchs", {
         nombre: nombre.trim(),
+        tn_match_product_id: String(matchProduct.id),
         producto1: { tn_product_id: String(prod1.id), nombre: getPName(prod1) },
         producto2: { tn_product_id: String(prod2.id), nombre: getPName(prod2) },
       });
@@ -859,6 +862,13 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
         <div>
           <label style={lbl}>Nombre del Match</label>
           <input style={inp} placeholder='ej: Wall-E y Eva' value={nombre} onChange={e => setNombre(e.target.value)} autoFocus />
+        </div>
+        <div style={{ padding: "12px 14px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, color: C.textMuted, fontFamily: T.font, lineHeight: 1.6 }}>
+          <span style={{ color: C.amber, fontWeight: 600 }}>Antes de continuar:</span> creá un producto en Tiendanube llamado "Match [nombre]" con el precio del combo y las fotos. Ese es el <strong style={{ color: C.text }}>producto contenedor</strong>.
+        </div>
+        <ProductSelect label="Producto contenedor (la página del Match en TN)" value={matchProduct} onChange={setMatchProduct} />
+        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
+          <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12, fontFamily: T.font }}>Productos individuales (con stock real)</div>
         </div>
         <ProductSelect label="Producto 1" value={prod1} onChange={setProd1} />
         <div style={{ textAlign: "center", color: C.textDim, fontSize: 20 }}>+</div>
@@ -917,10 +927,12 @@ function MatchsView({ onToast }: { onToast: (m: string, t?: string) => void }) {
           {matchs.map(m => (
             <div key={m.id} style={{ ...card, padding: "16px 20px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 16 }}>💞</span>
                   <span style={{ fontWeight: 600, color: C.text, fontSize: 15, fontFamily: T.font }}>{m.nombre}</span>
-                  <span style={{ fontFamily: T.mono, color: C.textDim, fontSize: 10 }}>{m.id}</span>
+                  <span style={{ background: C.pinkDim, color: C.pink, border: `1px solid ${C.pinkBorder}`, borderRadius: 4, padding: "1px 7px", fontSize: 11, fontFamily: T.mono }}>
+                    página #{m.tn_match_product_id}
+                  </span>
                 </div>
                 <button onClick={() => handleDelete(m.id, m.nombre)} style={btnRed}>Eliminar</button>
               </div>
