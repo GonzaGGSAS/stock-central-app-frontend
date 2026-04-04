@@ -1,175 +1,90 @@
-import { useState, useEffect, useCallback, CSSProperties } from "react";
+import { useState, useEffect, useCallback } from "react";
+
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
 
 const API = "https://stock-central-production.up.railway.app/api";
 
-// ── Google Fonts ──────────────────────────────────────────────────────────────
-const fontLink = document.createElement("link");
-fontLink.rel = "stylesheet";
-fontLink.href = "https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap";
-document.head.appendChild(fontLink);
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
 
-async function api(method: string, path: string, body?: unknown) {
+async function api(method, path, body) {
   const res = await fetch(`${API}${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Error");
+  if (!res.ok) throw new Error(data.error || "Error desconocido");
   return data;
 }
 
-function fmt(ts: string) {
+function fmt(ts) {
+  if (!ts) return "";
   const d = new Date(ts);
-  return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" }) + " " +
-    d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" }) +
+    " " + d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
 }
 
-function fmtDate(ts: string) {
-  return new Date(ts).toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" });
-}
-
-function isToday(ts: string) {
-  const d = new Date(ts);
-  const now = new Date();
-  return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-}
-
-const EXCLUIR = /personaliz/i;
-
-// ── Design tokens ─────────────────────────────────────────────────────────────
-const C = {
-  bg: "#09090b",
-  surface: "#111113",
-  surfaceHover: "#18181b",
-  border: "#27272a",
-  borderHover: "#3f3f46",
-  text: "#fafafa",
-  textMuted: "#71717a",
-  textDim: "#3f3f46",
-  accent: "#10b981",
-  accentDim: "#052e16",
-  accentBorder: "#065f46",
-  amber: "#f59e0b",
-  amberDim: "#1c1400",
-  red: "#ef4444",
-  redDim: "#1c0606",
-  blue: "#3b82f6",
-  blueDim: "#0c1a3a",
-  blueBorder: "#1d4ed8",
-};
-
-const T = { font: "'Geist', sans-serif", mono: "'JetBrains Mono', monospace" };
-
-// ── Shared styles ─────────────────────────────────────────────────────────────
-const inp: CSSProperties = {
-  background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
-  padding: "10px 14px", color: C.text, width: "100%", fontSize: 14,
-  outline: "none", boxSizing: "border-box", fontFamily: T.font,
-  transition: "border-color 0.15s",
-};
-const lbl: CSSProperties = {
-  display: "block", color: C.textMuted, fontSize: 11, marginBottom: 6,
-  fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: T.font,
-};
-const btnPrimary: CSSProperties = {
-  padding: "9px 18px", background: C.text, color: C.bg, border: "none",
-  borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: 13,
-  fontFamily: T.font, transition: "opacity 0.15s",
-};
-const btnSecondary: CSSProperties = {
-  padding: "8px 14px", background: "transparent", color: C.textMuted,
-  border: `1px solid ${C.border}`, borderRadius: 8, cursor: "pointer",
-  fontSize: 12, fontFamily: T.font, transition: "all 0.15s",
-};
-const btnGreen: CSSProperties = {
-  padding: "6px 12px", background: C.accentDim, color: C.accent,
-  border: `1px solid ${C.accentBorder}`, borderRadius: 6, cursor: "pointer",
-  fontSize: 12, fontWeight: 600, fontFamily: T.font, transition: "all 0.15s",
-};
-const btnRed: CSSProperties = {
-  padding: "6px 12px", background: "transparent", color: C.red,
-  border: `1px solid #3f1515`, borderRadius: 6, cursor: "pointer",
-  fontSize: 12, fontFamily: T.font, transition: "all 0.15s",
-};
-const card: CSSProperties = {
-  background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12,
-};
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-type TnVariant = { id: number; values: Record<string, string>[]; sku: string; stock: number };
-type TnProduct = { id: number; name: { es?: string } | string; variants: TnVariant[] };
-type Link = { product_id: string; variant_id: string; label: string };
-type LogEntry = { ts: string; action: string; stock: number; delta?: number; reason?: string; order_id?: string; reservation_id?: string };
-type Variante = { id: string; label: string; stock: number; links: Link[]; log: LogEntry[] };
-type Producto = { id: string; nombre: string; variantes: Variante[] };
-type Stats = { total_productos: number; total_variantes: number; total_links: number; stock_bajo: number; sin_stock: number; active_reservations: number; recent_log: (LogEntry & { producto: string; variante: string })[] };
-
-// ── Progress Bar ──────────────────────────────────────────────────────────────
-function ProgressBar({ current, total, label }: { current: number; total: number; label: string }) {
-  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+function Badge({ children, color = "gray" }) {
+  const colors = {
+    green: { bg: "#0d2e1a", text: "#4ade80", border: "#166534" },
+    red: { bg: "#2e0d0d", text: "#f87171", border: "#991b1b" },
+    yellow: { bg: "#2e260d", text: "#fbbf24", border: "#92400e" },
+    gray: { bg: "#1a1a2e", text: "#94a3b8", border: "#334155" },
+    blue: { bg: "#0d1a2e", text: "#60a5fa", border: "#1e3a5f" },
+    pink: { bg: "#2e0d1a", text: "#f472b6", border: "#9d174d" },
+  };
+  const c = colors[color] || colors.gray;
   return (
-    <div style={{ background: C.bg, border: `1px solid ${C.blueBorder}`, borderRadius: 8, padding: "12px 14px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-        <span style={{ color: C.textMuted, fontSize: 12, fontFamily: T.font, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "75%" }}>{label}</span>
-        <span style={{ fontFamily: T.mono, fontWeight: 700, fontSize: 13, color: C.blue }}>{current}/{total}</span>
+    <span style={{
+      background: c.bg, color: c.text, border: `1px solid ${c.border}`,
+      padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600,
+      fontFamily: "monospace", letterSpacing: "0.04em"
+    }}>{children}</span>
+  );
+}
+
+function StockBar({ stock, max = 100 }) {
+  const pct = Math.min(100, (stock / max) * 100);
+  const color = stock === 0 ? "#ef4444" : stock <= 5 ? "#f59e0b" : "#22c55e";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ flex: 1, height: 4, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
+        <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 0.4s ease", borderRadius: 2 }} />
       </div>
-      <div style={{ height: 4, background: C.border, borderRadius: 2, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg, ${C.blue}, #60a5fa)`, borderRadius: 2, transition: "width 0.25s ease" }} />
-      </div>
+      <span style={{ fontFamily: "monospace", fontSize: 13, color, minWidth: 30, textAlign: "right", fontWeight: 700 }}>{stock}</span>
     </div>
   );
 }
 
-// ── Badge ─────────────────────────────────────────────────────────────────────
-function Badge({ children, color = "gray" }: { children: React.ReactNode; color?: "green" | "red" | "amber" | "blue" | "gray" }) {
-  const map = {
-    green: { bg: C.accentDim, text: C.accent, border: C.accentBorder },
-    red: { bg: C.redDim, text: C.red, border: "#3f1515" },
-    amber: { bg: C.amberDim, text: C.amber, border: "#3d2600" },
-    blue: { bg: C.blueDim, text: C.blue, border: C.blueBorder },
-    gray: { bg: C.surface, text: C.textMuted, border: C.border },
-  };
-  const s = map[color];
-  return (
-    <span style={{ background: s.bg, color: s.text, border: `1px solid ${s.border}`, padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: T.mono, letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
-      {children}
-    </span>
-  );
-}
-
-// ── Toast ─────────────────────────────────────────────────────────────────────
-function Toast({ msg, type, onClose }: { msg: string; type: string; onClose: () => void }) {
-  useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, [onClose]);
-  const isErr = type === "error";
+function Toast({ msg, type, onClose }) {
+  useEffect(() => { const t = setTimeout(onClose, 3500); return () => clearTimeout(t); }, [onClose]);
+  const color = type === "error" ? "#ef4444" : "#22c55e";
   return (
     <div style={{
       position: "fixed", bottom: 24, right: 24, zIndex: 999,
-      background: C.surface, border: `1px solid ${isErr ? "#3f1515" : C.accentBorder}`,
-      borderRadius: 10, padding: "14px 18px", color: C.text, fontSize: 14,
-      maxWidth: 360, display: "flex", gap: 12, alignItems: "center",
-      boxShadow: `0 8px 32px ${isErr ? "#ef444420" : "#10b98120"}`,
-      fontFamily: T.font, animation: "slideIn 0.2s ease",
+      background: "#0f172a", border: `1px solid ${color}`, borderRadius: 8,
+      padding: "12px 18px", color: "#f8fafc", fontSize: 14, maxWidth: 340,
+      boxShadow: `0 0 20px ${color}33`, display: "flex", alignItems: "center", gap: 10
     }}>
-      <div style={{ width: 6, height: 6, borderRadius: "50%", background: isErr ? C.red : C.accent, flexShrink: 0 }} />
+      <span style={{ color, fontSize: 18 }}>{type === "error" ? "⚠" : "✓"}</span>
       {msg}
-      <button onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", color: C.textMuted, cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 0 }}>×</button>
     </div>
   );
 }
 
-// ── Modal ─────────────────────────────────────────────────────────────────────
-function Modal({ title, subtitle, onClose, children, wide }: { title: string; subtitle?: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+function Modal({ title, onClose, children }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#000000cc", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(4px)" }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ ...card, padding: 28, width: "100%", maxWidth: wide ? 720 : 520, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 64px #00000080" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
-          <div>
-            <h3 style={{ margin: 0, color: C.text, fontSize: 17, fontWeight: 600, fontFamily: T.font }}>{title}</h3>
-            {subtitle && <p style={{ margin: "4px 0 0", color: C.textMuted, fontSize: 13, fontFamily: T.font }}>{subtitle}</p>}
-          </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "2px 6px", borderRadius: 4 }}>×</button>
+    <div style={{
+      position: "fixed", inset: 0, background: "#000000cc", zIndex: 100,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 20
+    }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{
+        background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12,
+        padding: 28, width: "100%", maxWidth: 560, maxHeight: "85vh", overflowY: "auto"
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h3 style={{ margin: 0, color: "#f8fafc", fontSize: 16, fontWeight: 700 }}>{title}</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>×</button>
         </div>
         {children}
       </div>
@@ -177,145 +92,133 @@ function Modal({ title, subtitle, onClose, children, wide }: { title: string; su
   );
 }
 
-// ── Stock indicator ───────────────────────────────────────────────────────────
-function StockPill({ stock }: { stock: number }) {
-  const color = stock === 0 ? C.red : stock <= 5 ? C.amber : C.accent;
-  const bg = stock === 0 ? C.redDim : stock <= 5 ? C.amberDim : C.accentDim;
+// ─── CONFIG VIEW ──────────────────────────────────────────────────────────────
+
+function ConfigView({ onSaved }) {
+  const [token, setToken] = useState("");
+  const [storeId, setStoreId] = useState("");
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState(null);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await api("POST", "/config", { access_token: token, store_id: storeId });
+      setResult({ ok: true, msg: "Credenciales guardadas ✓" });
+      setTimeout(onSaved, 800);
+    } catch (e) { setResult({ ok: false, msg: e.message }); }
+    setSaving(false);
+  }
+
+  async function handleTest() {
+    setTesting(true);
+    try {
+      const r = await api("POST", "/config/test");
+      setResult({ ok: true, msg: `Conectado a: ${r.store_name}` });
+    } catch (e) { setResult({ ok: false, msg: e.message }); }
+    setTesting(false);
+  }
+
+  async function handleWebhook() {
+    if (!webhookUrl) return;
+    try {
+      const r = await api("POST", "/config/webhook", { webhook_url: webhookUrl });
+      setResult({ ok: true, msg: r.message });
+    } catch (e) { setResult({ ok: false, msg: e.message }); }
+  }
+
+  const inp = { background: "#1e293b", border: "1px solid #334155", borderRadius: 6, padding: "10px 12px", color: "#f8fafc", width: "100%", fontSize: 13, outline: "none", boxSizing: "border-box" };
+  const lbl = { display: "block", color: "#94a3b8", fontSize: 12, marginBottom: 6, fontWeight: 600, letterSpacing: "0.05em" };
+
   return (
-    <span style={{ background: bg, color, fontFamily: T.mono, fontWeight: 700, fontSize: 15, padding: "3px 10px", borderRadius: 6, minWidth: 40, display: "inline-block", textAlign: "center" }}>
-      {stock}
-    </span>
-  );
-}
-
-// ── Activity log helpers ──────────────────────────────────────────────────────
-function getActionLabel(action: string, reason?: string): { label: string; color: "green" | "red" | "amber" | "blue" | "gray" } {
-  if (action === "sale") return { label: "Venta", color: "red" };
-  if (action === "reserved") return { label: "Reservado", color: "amber" };
-  if (action === "reservation_released") return { label: "Liberado", color: "green" };
-  if (action === "reservation_expired") return { label: "Expirado", color: "gray" };
-  if (action === "return") return { label: "Devolución", color: "green" };
-  if (action === "add") return { label: "Carga", color: "green" };
-  if (action === "subtract") return { label: "Descuento manual", color: "amber" };
-  if (action === "set") return { label: "Ajuste", color: "blue" };
-  if (action === "sync") return { label: "Sync", color: "blue" };
-  if (action === "created") return { label: "Creado", color: "gray" };
-  return { label: action, color: "gray" };
-}
-
-// ── Activity Panel ────────────────────────────────────────────────────────────
-function ActivityPanel({ log }: { log: (LogEntry & { producto: string; variante: string })[] }) {
-  const [tab, setTab] = useState<"today" | "sales" | "restock">("today");
-
-  const todayLog = log.filter(l => isToday(l.ts));
-  const salesLog = log.filter(l => ["sale", "reserved", "subtract"].includes(l.action));
-  const restockLog = log.filter(l => ["add", "return", "reservation_released", "reservation_expired"].includes(l.action));
-
-  const todaySales = todayLog.filter(l => l.action === "sale").length;
-  const todayManual = todayLog.filter(l => l.action === "subtract").length;
-  const todayRestock = todayLog.filter(l => ["add", "return"].includes(l.action)).length;
-  const todayReserved = todayLog.filter(l => l.action === "reserved").length;
-
-  const tabStyle = (t: string): CSSProperties => ({
-    padding: "7px 16px", borderRadius: 6, cursor: "pointer", fontSize: 13,
-    fontFamily: T.font, fontWeight: 500, border: "none", transition: "all 0.15s",
-    background: tab === t ? C.text : "transparent",
-    color: tab === t ? C.bg : C.textMuted,
-  });
-
-  const renderLog = (entries: (LogEntry & { producto: string; variante: string })[]) => {
-    if (entries.length === 0) return (
-      <div style={{ textAlign: "center", padding: "32px 0", color: C.textDim, fontSize: 13, fontFamily: T.font }}>Sin movimientos</div>
-    );
-    return entries.slice(0, 25).map((l, i) => {
-      const { label, color } = getActionLabel(l.action, l.reason);
-      return (
-        <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "9px 0", borderBottom: i < entries.length - 1 ? `1px solid ${C.border}` : "none" }}>
-          <span style={{ color: C.textMuted, fontFamily: T.mono, fontSize: 11, minWidth: 88, flexShrink: 0 }}>{fmt(l.ts)}</span>
-          <Badge color={color}>{label}</Badge>
-          <span style={{ color: C.textMuted, fontSize: 12, fontFamily: T.font, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{l.producto} · {l.variante}</span>
-          {l.delta !== undefined && (
-            <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: l.delta > 0 ? C.accent : C.red, flexShrink: 0 }}>
-              {l.delta > 0 ? "+" : ""}{l.delta}
-            </span>
-          )}
-          <span style={{ fontFamily: T.mono, fontSize: 12, color: C.textMuted, flexShrink: 0 }}>{l.stock}</span>
+    <div style={{ maxWidth: 540, margin: "0 auto" }}>
+      <div style={{ textAlign: "center", marginBottom: 32 }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>⚙️</div>
+        <h2 style={{ color: "#f8fafc", margin: 0, fontSize: 22 }}>Configuración inicial</h2>
+        <p style={{ color: "#64748b", marginTop: 8, fontSize: 14 }}>Conectá Stock Central con tu tienda</p>
+      </div>
+      <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <h3 style={{ color: "#60a5fa", margin: "0 0 16px", fontSize: 14, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>1 · Credenciales de API</h3>
+        <div style={{ marginBottom: 14 }}>
+          <label style={lbl}>STORE ID</label>
+          <input style={inp} placeholder="ej: 2099076" value={storeId} onChange={e => setStoreId(e.target.value)} />
         </div>
-      );
-    });
-  };
-
-  return (
-    <div style={{ ...card, padding: 20, marginTop: 20 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: C.text, fontFamily: T.font }}>Actividad</h3>
-        <div style={{ display: "flex", gap: 4, background: C.bg, padding: 4, borderRadius: 8, border: `1px solid ${C.border}` }}>
-          <button style={tabStyle("today")} onClick={() => setTab("today")}>Hoy</button>
-          <button style={tabStyle("sales")} onClick={() => setTab("sales")}>Ventas</button>
-          <button style={tabStyle("restock")} onClick={() => setTab("restock")}>Reposición</button>
+        <div style={{ marginBottom: 16 }}>
+          <label style={lbl}>ACCESS TOKEN</label>
+          <input style={inp} type="password" placeholder="af56c0d9f79f..." value={token} onChange={e => setToken(e.target.value)} />
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={handleSave} disabled={saving || !token || !storeId} style={{ flex: 1, padding: "10px 0", background: "#3b82f6", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+            {saving ? "Guardando..." : "Guardar"}
+          </button>
+          <button onClick={handleTest} disabled={testing || !token || !storeId} style={{ padding: "10px 16px", background: "#1e293b", color: "#94a3b8", border: "1px solid #334155", borderRadius: 6, cursor: "pointer", fontSize: 13 }}>
+            {testing ? "..." : "Probar conexión"}
+          </button>
         </div>
       </div>
-
-      {tab === "today" && (
-        <>
-          {todayLog.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "20px 0", color: C.textDim, fontSize: 13, fontFamily: T.font }}>
-              Sin actividad hoy — {fmtDate(new Date().toISOString())}
-            </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
-              {[
-                { label: "Total", value: todayLog.length, color: C.blue },
-                { label: "Ventas", value: todaySales, color: C.red },
-                { label: "Manuales", value: todayManual, color: C.amber },
-                { label: "Reposiciones", value: todayRestock, color: C.accent },
-              ].map(s => (
-                <div key={s.label} style={{ background: C.bg, borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}` }}>
-                  <div style={{ color: C.textMuted, fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontFamily: T.font }}>{s.label}</div>
-                  <div style={{ color: s.color, fontFamily: T.mono, fontSize: 22, fontWeight: 700 }}>{s.value}</div>
-                </div>
-              ))}
-            </div>
-          )}
-          {renderLog(todayLog)}
-        </>
+      <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <h3 style={{ color: "#60a5fa", margin: "0 0 16px", fontSize: 14, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>2 · Webhook</h3>
+        <div style={{ marginBottom: 14 }}>
+          <label style={lbl}>URL PÚBLICA DEL SERVIDOR</label>
+          <input style={inp} placeholder="https://tu-app.railway.app" value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} />
+        </div>
+        <button onClick={handleWebhook} disabled={!webhookUrl} style={{ padding: "10px 20px", background: "#065f46", color: "#4ade80", border: "1px solid #166534", borderRadius: 6, cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+          Registrar webhooks en Tiendanube
+        </button>
+      </div>
+      {result && (
+        <div style={{ padding: 12, borderRadius: 6, background: result.ok ? "#0d2e1a" : "#2e0d0d", border: `1px solid ${result.ok ? "#166534" : "#991b1b"}`, color: result.ok ? "#4ade80" : "#f87171", fontSize: 13 }}>
+          {result.msg}
+        </div>
       )}
-      {tab === "sales" && renderLog(salesLog)}
-      {tab === "restock" && renderLog(restockLog)}
     </div>
   );
 }
 
-// ── Add Variante Modal ────────────────────────────────────────────────────────
-function AddVarianteModal({ productoId, onClose, onAdded }: { productoId: string; onClose: () => void; onAdded: () => void }) {
-  const [label, setLabel] = useState("");
-  const [stock, setStock] = useState("");
+// ─── PRODUCTOS COMPONENTS ─────────────────────────────────────────────────────
+
+function CreateProductoModal({ onClose, onCreated, loadTnProducts }) {
+  const [nombre, setNombre] = useState("");
+  const [id, setId] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
   async function handle() {
-    if (!label) return setErr("El nombre es obligatorio");
+    if (!id || !nombre) return setErr("ID y nombre son obligatorios");
     setLoading(true);
-    try { await api("POST", `/productos/${productoId}/variantes`, { label, stock: parseInt(stock) || 0 }); onAdded(); }
-    catch (e: unknown) { setErr(e instanceof Error ? e.message : "Error"); }
+    try {
+      const r = await api("POST", "/productos", { id, nombre });
+      onCreated(r);
+    } catch (e) { setErr(e.message); }
     setLoading(false);
   }
 
+  const inp = { background: "#1e293b", border: "1px solid #334155", borderRadius: 6, padding: "10px 12px", color: "#f8fafc", width: "100%", fontSize: 13, outline: "none", boxSizing: "border-box" };
+
   return (
-    <Modal title="Nueva variante" onClose={onClose}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <div><label style={lbl}>Nombre</label><input style={inp} placeholder="ej: S / BLANCO" value={label} onChange={e => setLabel(e.target.value)} autoFocus /></div>
-        <div><label style={lbl}>Stock inicial</label><input style={{ ...inp, fontFamily: T.mono }} type="number" min="0" placeholder="0" value={stock} onChange={e => setStock(e.target.value)} /></div>
-        {err && <p style={{ color: C.red, fontSize: 13, margin: 0, fontFamily: T.font }}>{err}</p>}
-        <button onClick={handle} disabled={loading} style={{ ...btnPrimary, opacity: loading ? 0.6 : 1 }}>{loading ? "Agregando..." : "Agregar variante"}</button>
+    <Modal title="Nuevo Producto" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div>
+          <label style={{ display: "block", color: "#94a3b8", fontSize: 12, marginBottom: 6, fontWeight: 600 }}>ID INTERNO *</label>
+          <input style={{ ...inp, fontFamily: "monospace", textTransform: "uppercase" }} placeholder="ej: BUZO-WALLE" value={id} onChange={e => setId(e.target.value)} />
+        </div>
+        <div>
+          <label style={{ display: "block", color: "#94a3b8", fontSize: 12, marginBottom: 6, fontWeight: 600 }}>NOMBRE</label>
+          <input style={inp} placeholder="ej: Buzo Wall-E" value={nombre} onChange={e => setNombre(e.target.value)} />
+        </div>
+        {err && <div style={{ color: "#f87171", fontSize: 13 }}>{err}</div>}
+        <button onClick={handle} disabled={loading} style={{ padding: "12px 0", background: "#3b82f6", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
+          {loading ? "Creando..." : "Crear Producto"}
+        </button>
       </div>
     </Modal>
   );
 }
 
-// ── Adjust Stock Modal ────────────────────────────────────────────────────────
-function AdjustStockModal({ productoId, variante, onClose, onAdjusted }: { productoId: string; variante: Variante; onClose: () => void; onAdjusted: () => void }) {
-  const [mode, setMode] = useState<"add" | "subtract" | "set">("add");
+function AdjustStockModal({ productoId, varianteId, label, current, onClose, onAdjusted }) {
+  const [mode, setMode] = useState("add");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [sync, setSync] = useState(true);
@@ -326,606 +229,615 @@ function AdjustStockModal({ productoId, variante, onClose, onAdjusted }: { produ
     if (isNaN(n) || n < 0) return;
     setLoading(true);
     try {
-      const body: Record<string, unknown> = { reason, sync };
+      let body = { reason, sync };
       if (mode === "set") body.absolute = n;
       else body.delta = mode === "add" ? n : -n;
-      await api("PUT", `/productos/${productoId}/variantes/${variante.id}/stock`, body);
-      onAdjusted();
-    } catch (_e) { }
+      const r = await api("PUT", `/productos/${productoId}/variantes/${varianteId}/stock`, body);
+      onAdjusted(r.stock, r.sync);
+    } catch (e) { }
     setLoading(false);
     onClose();
   }
 
-  const n = parseInt(amount);
-  const preview = isNaN(n) ? null : mode === "set" ? n : mode === "add" ? variante.stock + n : Math.max(0, variante.stock - n);
-
-  const modeBtn = (m: "add" | "subtract" | "set", label: string) => (
+  const modeBtn = (m, label) => (
     <button onClick={() => setMode(m)} style={{
-      flex: 1, padding: "8px 0", borderRadius: 6, border: `1px solid ${mode === m ? C.blue : C.border}`,
-      background: mode === m ? C.blueDim : "transparent", color: mode === m ? C.blue : C.textMuted,
-      cursor: "pointer", fontWeight: 600, fontSize: 13, fontFamily: T.font, transition: "all 0.15s",
+      flex: 1, padding: "8px 0", borderRadius: 6, border: "1px solid",
+      borderColor: mode === m ? "#3b82f6" : "#334155",
+      background: mode === m ? "#1e3a5f" : "#1e293b",
+      color: mode === m ? "#60a5fa" : "#64748b",
+      cursor: "pointer", fontWeight: 700, fontSize: 12
     }}>{label}</button>
   );
 
   return (
-    <Modal title={`Ajustar stock`} subtitle={variante.label} onClose={onClose}>
+    <Modal title={`Ajustar stock · ${label}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <div style={{ ...card, padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ color: C.textMuted, fontSize: 13, fontFamily: T.font }}>Stock actual</span>
-          <StockPill stock={variante.stock} />
+        <div style={{ background: "#1e293b", borderRadius: 8, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ color: "#64748b", fontSize: 13 }}>Stock actual</span>
+          <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 22, color: current === 0 ? "#ef4444" : "#22c55e" }}>{current}</span>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>{modeBtn("add", "+ Agregar")}{modeBtn("subtract", "− Restar")}{modeBtn("set", "= Fijar")}</div>
-        <input autoFocus style={{ ...inp, fontFamily: T.mono, fontSize: 28, fontWeight: 700, textAlign: "center", padding: "16px" }}
-          type="number" min="0" placeholder="0" value={amount} onChange={e => setAmount(e.target.value)} />
-        {preview !== null && (
-          <div style={{ background: C.accentDim, border: `1px solid ${C.accentBorder}`, borderRadius: 8, padding: "12px", textAlign: "center", color: C.accent }}>
-            <span style={{ fontFamily: T.font, fontSize: 13 }}>Resultado: </span>
-            <span style={{ fontFamily: T.mono, fontWeight: 700, fontSize: 20 }}>{preview}</span>
+        <div style={{ display: "flex", gap: 8 }}>
+          {modeBtn("add", "+ Agregar")}
+          {modeBtn("subtract", "− Restar")}
+          {modeBtn("set", "= Fijar")}
+        </div>
+        <input
+          style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 6, padding: "12px", color: "#f8fafc", width: "100%", fontSize: 20, fontFamily: "monospace", fontWeight: 700, outline: "none", boxSizing: "border-box", textAlign: "center" }}
+          type="number" min="0" placeholder="0" value={amount} onChange={e => setAmount(e.target.value)} autoFocus
+        />
+        {amount && !isNaN(parseInt(amount)) && (
+          <div style={{ background: "#0d2e1a", border: "1px solid #166534", borderRadius: 6, padding: "10px 14px", color: "#4ade80", fontSize: 14, textAlign: "center" }}>
+            Resultado: <strong style={{ fontFamily: "monospace", fontSize: 16 }}>
+              {mode === "set" ? parseInt(amount) : mode === "add" ? current + parseInt(amount) : Math.max(0, current - parseInt(amount))}
+            </strong>
           </div>
         )}
-        <input style={inp} placeholder="Motivo (opcional)" value={reason} onChange={e => setReason(e.target.value)} />
+        <input
+          style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 6, padding: "10px 12px", color: "#f8fafc", width: "100%", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+          placeholder="Motivo (opcional)" value={reason} onChange={e => setReason(e.target.value)}
+        />
         <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-          <input type="checkbox" checked={sync} onChange={e => setSync(e.target.checked)} style={{ accentColor: C.accent, width: 16, height: 16 }} />
-          <span style={{ color: C.textMuted, fontSize: 13, fontFamily: T.font }}>Sincronizar a Tiendanube</span>
+          <input type="checkbox" checked={sync} onChange={e => setSync(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#3b82f6" }} />
+          <span style={{ color: "#94a3b8", fontSize: 13 }}>Sincronizar a Tiendanube</span>
         </label>
-        <button onClick={handle} disabled={loading || !amount} style={{ ...btnPrimary, opacity: loading || !amount ? 0.5 : 1 }}>{loading ? "Aplicando..." : "Aplicar"}</button>
+        <button onClick={handle} disabled={loading || !amount} style={{ padding: "12px 0", background: "#3b82f6", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
+          {loading ? "Aplicando..." : "Aplicar ajuste"}
+        </button>
       </div>
     </Modal>
   );
 }
 
-// ── Link Modal ────────────────────────────────────────────────────────────────
-function LinkModal({ productoId, variante, onClose, onLinked }: { productoId: string; variante: Variante; onClose: () => void; onLinked: () => void }) {
-  const [tnProducts, setTnProducts] = useState<TnProduct[]>([]);
+function LinkVariantModal({ productoId, varianteId, onClose, onLinked }) {
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<{ product_id: string; variant_id: string; label: string }[]>([]);
-  const [progress, setProgress] = useState<{ current: number; total: number; label: string } | null>(null);
+  const [selected, setSelected] = useState(null);
+  const [linking, setLinking] = useState(false);
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    api("GET", "/tn-products").then((data: TnProduct[]) => { setTnProducts(data); setLoading(false); })
-      .catch(() => { setErr("Error cargando productos"); setLoading(false); });
+    api("GET", "/tn-products").then(data => {
+      setProducts(Array.isArray(data) ? data : []);
+      setLoading(false);
+    }).catch(e => { setErr("No se pudieron cargar los productos."); setLoading(false); });
   }, []);
 
-  const q = search.toLowerCase();
-  const filtered = tnProducts
-    .filter(p => { const n = typeof p.name === "object" ? (p.name.es || "") : String(p.name); return !EXCLUIR.test(n); })
-    .map(p => {
-      const pName = typeof p.name === "object" ? (p.name.es || "") : String(p.name);
-      const fv = p.variants.filter(v => {
-        const vl = v.values?.map(vv => Object.values(vv)[0]).join(" / ") || "";
-        return !q || pName.toLowerCase().includes(q) || vl.toLowerCase().includes(q) || (v.sku || "").toLowerCase().includes(q);
-      });
-      return { ...p, _name: pName, variants: fv };
-    }).filter(p => p.variants.length > 0);
-
-  function toggle(product_id: string, variant_id: string, label: string) {
-    setSelected(prev => prev.some(s => s.variant_id === variant_id) ? prev.filter(s => s.variant_id !== variant_id) : [...prev, { product_id, variant_id, label }]);
-  }
-
   async function handleLink() {
-    if (selected.length === 0) return;
-    setProgress({ current: 0, total: selected.length, label: "Iniciando..." });
-    let linked = 0;
-    for (let i = 0; i < selected.length; i++) {
-      setProgress({ current: i, total: selected.length, label: `Vinculando: ${selected[i].label}` });
-      try { await api("POST", `/productos/${productoId}/variantes/${variante.id}/links`, selected[i]); linked++; } catch (_e) { }
-    }
-    setProgress({ current: selected.length, total: selected.length, label: `Listo: ${linked} vinculada(s)` });
-    setTimeout(() => { if (linked > 0) onLinked(); else setErr("No se pudo vincular"); setProgress(null); }, 800);
+    if (!selected) return;
+    setLinking(true);
+    try {
+      await api("POST", `/productos/${productoId}/variantes/${varianteId}/links`, selected);
+      onLinked(selected);
+    } catch (e) { setErr(e.message); }
+    setLinking(false);
   }
 
   return (
-    <Modal title={`Vincular variante`} subtitle={variante.label} onClose={onClose} wide>
-      <input autoFocus style={{ ...inp, marginBottom: 14 }} placeholder="Buscar producto, variante o SKU..." value={search} onChange={e => setSearch(e.target.value)} />
-      {loading && <p style={{ color: C.textMuted, textAlign: "center", fontFamily: T.font }}>Cargando productos...</p>}
-      <div style={{ maxHeight: 340, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
-        {filtered.map(p => (
+    <Modal title="Vincular a Tiendanube" onClose={onClose}>
+      {loading && <p style={{ color: "#64748b", textAlign: "center" }}>Cargando productos...</p>}
+      {err && <p style={{ color: "#f87171", fontSize: 13 }}>{err}</p>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflowY: "auto" }}>
+        {products.map(p => (
           <div key={p.id}>
-            <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", padding: "10px 4px 5px", fontFamily: T.font }}>{p._name}</div>
-            {p.variants.map(v => {
-              const vLabel = v.values?.map(vv => Object.values(vv)[0]).join(" / ") || `Variante ${v.id}`;
-              const label = `${p._name} · ${vLabel}`;
-              const isSel = selected.some(s => s.variant_id === String(v.id));
-              const alreadyLinked = variante.links.some(l => l.variant_id === String(v.id));
+            <div style={{ color: "#94a3b8", fontSize: 11, padding: "6px 0 4px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              {p.name?.es || p.name || `Producto ${p.id}`}
+            </div>
+            {(p.variants || []).map(v => {
+              const lbl = `${p.name?.es || p.name} · ${v.values?.map(vv => vv.es || vv.en || Object.values(vv)[0]).join(" / ") || v.sku || v.id}`;
+              const isSelected = selected?.variant_id === String(v.id);
               return (
-                <div key={v.id} onClick={() => !alreadyLinked && !progress && toggle(String(p.id), String(v.id), label)}
-                  style={{
-                    padding: "9px 12px", borderRadius: 7, cursor: alreadyLinked || progress ? "default" : "pointer",
-                    background: isSel ? C.blueDim : alreadyLinked ? C.accentDim : "transparent",
-                    border: `1px solid ${isSel ? C.blueBorder : alreadyLinked ? C.accentBorder : C.border}`,
-                    display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3,
-                    transition: "all 0.1s",
-                  }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{
-                      width: 15, height: 15, borderRadius: 4,
-                      border: `2px solid ${isSel ? C.blue : alreadyLinked ? C.accent : C.border}`,
-                      background: isSel ? C.blue : "transparent",
-                      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                    }}>
-                      {(isSel || alreadyLinked) && <span style={{ color: "#fff", fontSize: 9, fontWeight: 800 }}>✓</span>}
-                    </div>
-                    <span style={{ color: isSel ? C.blue : alreadyLinked ? C.accent : C.text, fontSize: 13, fontFamily: T.font }}>
-                      {vLabel}{alreadyLinked ? " — ya vinculada" : ""}
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                    {v.sku && <span style={{ fontFamily: T.mono, fontSize: 11, color: C.textMuted }}>{v.sku}</span>}
-                    <span style={{ fontFamily: T.mono, fontSize: 12, color: C.textMuted }}>s:{v.stock ?? "∞"}</span>
-                  </div>
+                <div key={v.id} onClick={() => setSelected({ product_id: String(p.id), variant_id: String(v.id), label: lbl })}
+                  style={{ padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 13, background: isSelected ? "#1e3a5f" : "#1e293b", border: `1px solid ${isSelected ? "#3b82f6" : "#334155"}`, color: isSelected ? "#60a5fa" : "#94a3b8", marginBottom: 4, display: "flex", justifyContent: "space-between" }}>
+                  <span>{v.values?.map(vv => vv.es || vv.en || Object.values(vv)[0]).join(" / ") || `Variante ${v.id}`}</span>
+                  <span style={{ fontFamily: "monospace", fontSize: 12 }}>stock: {v.stock ?? "∞"}</span>
                 </div>
               );
             })}
           </div>
         ))}
       </div>
-      {selected.length > 0 && !progress && (
-        <div style={{ marginTop: 14, padding: "10px 14px", background: C.blueDim, border: `1px solid ${C.blueBorder}`, borderRadius: 8 }}>
-          <span style={{ color: C.blue, fontWeight: 600, fontSize: 13, fontFamily: T.font }}>{selected.length} seleccionada(s)</span>
-          <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
-            {selected.map(s => <span key={s.variant_id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 8px", fontSize: 11, color: C.textMuted, fontFamily: T.font }}>{s.label}</span>)}
-          </div>
-        </div>
-      )}
-      {progress && <div style={{ marginTop: 14 }}><ProgressBar current={progress.current} total={progress.total} label={progress.label} /></div>}
-      {err && <p style={{ color: C.red, fontSize: 13, marginTop: 8, fontFamily: T.font }}>{err}</p>}
-      <button onClick={handleLink} disabled={!!progress || selected.length === 0} style={{ ...btnPrimary, marginTop: 16, width: "100%", opacity: progress || selected.length === 0 ? 0.5 : 1 }}>
-        {progress ? `Vinculando ${progress.current}/${progress.total}...` : `Vincular ${selected.length > 0 ? `${selected.length} variante(s)` : ""}`}
+      {selected && <div style={{ marginTop: 12, padding: 10, background: "#0d1a2e", border: "1px solid #1e3a5f", borderRadius: 6, color: "#60a5fa", fontSize: 13 }}>Seleccionado: {selected.label}</div>}
+      <button onClick={handleLink} disabled={linking || !selected} style={{ marginTop: 14, padding: "12px 0", width: "100%", background: "#3b82f6", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
+        {linking ? "Vinculando..." : "Vincular"}
       </button>
     </Modal>
   );
 }
 
-// ── Variante Row ──────────────────────────────────────────────────────────────
-function VarianteRow({ productoId, variante, onRefresh, onToast }: { productoId: string; variante: Variante; onRefresh: () => void; onToast: (m: string, t?: string) => void }) {
-  const [showAdjust, setShowAdjust] = useState(false);
-  const [showLink, setShowLink] = useState(false);
-  const [showLog, setShowLog] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-
-  async function handleSync() {
-    setSyncing(true);
-    try { const r = await api("POST", `/productos/${productoId}/variantes/${variante.id}/sync`); onToast(`Sync OK: ${r.updated} link(s) actualizados`); }
-    catch (e: unknown) { onToast(e instanceof Error ? e.message : "Error", "error"); }
-    setSyncing(false);
-  }
-
-  async function handleUnlink(variant_id: string) {
-    try { await api("DELETE", `/productos/${productoId}/variantes/${variante.id}/links/${variant_id}`); onRefresh(); }
-    catch (e: unknown) { onToast(e instanceof Error ? e.message : "Error", "error"); }
-  }
-
-  async function handleDelete() {
-    if (!confirm(`¿Eliminar variante "${variante.label}"?`)) return;
-    try { await api("DELETE", `/productos/${productoId}/variantes/${variante.id}`); onRefresh(); }
-    catch (e: unknown) { onToast(e instanceof Error ? e.message : "Error", "error"); }
-  }
-
-  const stockColor = variante.stock === 0 ? C.red : variante.stock <= 5 ? C.amber : C.accent;
-
-  return (
-    <>
-      <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 6, transition: "border-color 0.15s" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: variante.links.length > 0 || showLog ? 10 : 0 }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: stockColor, flexShrink: 0 }} />
-          <span style={{ fontFamily: T.font, fontWeight: 500, color: C.text, fontSize: 14, flex: 1 }}>{variante.label}</span>
-          <StockPill stock={variante.stock} />
-        </div>
-
-        {variante.links.length > 0 && (
-          <div style={{ marginBottom: 10, display: "flex", flexWrap: "wrap", gap: 4 }}>
-            {variante.links.map(l => (
-              <span key={l.variant_id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: "3px 10px", fontSize: 11, color: C.textMuted, fontFamily: T.font, display: "flex", alignItems: "center", gap: 6 }}>
-                {l.label}
-                <button onClick={() => handleUnlink(l.variant_id)} style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1, opacity: 0.6 }}>×</button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-          <button onClick={() => setShowAdjust(true)} style={btnSecondary}>Ajustar stock</button>
-          <button onClick={() => setShowLink(true)} style={btnSecondary}>+ Vincular</button>
-          {variante.links.length > 0 && (
-            <button onClick={handleSync} disabled={syncing} style={{ ...btnGreen, opacity: syncing ? 0.6 : 1 }}>
-              {syncing ? "Sincronizando..." : "↑ Sync"}
-            </button>
-          )}
-          <button onClick={() => setShowLog(!showLog)} style={{ ...btnSecondary, color: showLog ? C.text : C.textMuted }}>Log</button>
-          <button onClick={handleDelete} style={{ ...btnRed, marginLeft: "auto" }}>Eliminar</button>
-        </div>
-
-        {showLog && variante.log.length > 0 && (
-          <div style={{ marginTop: 10, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
-            {variante.log.slice(0, 8).map((l, i) => {
-              const { label, color } = getActionLabel(l.action, l.reason);
-              return (
-                <div key={i} style={{ display: "flex", gap: 10, fontSize: 12, padding: "5px 0", borderBottom: i < Math.min(variante.log.length, 8) - 1 ? `1px solid ${C.border}` : "none", alignItems: "center" }}>
-                  <span style={{ fontFamily: T.mono, color: C.textMuted, fontSize: 11, minWidth: 88 }}>{fmt(l.ts)}</span>
-                  <Badge color={color}>{label}</Badge>
-                  {l.delta !== undefined && <span style={{ fontFamily: T.mono, color: l.delta > 0 ? C.accent : C.red, fontSize: 12, fontWeight: 600 }}>{l.delta > 0 ? "+" : ""}{l.delta}</span>}
-                  <span style={{ color: C.textMuted, fontFamily: T.font }}>→ <span style={{ fontFamily: T.mono, color: C.text }}>{l.stock}</span></span>
-                  {l.reason && <span style={{ color: C.textMuted, fontFamily: T.font, fontSize: 11 }}>{l.reason}</span>}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {showAdjust && <AdjustStockModal productoId={productoId} variante={variante} onClose={() => setShowAdjust(false)} onAdjusted={() => { onRefresh(); onToast("Stock actualizado"); }} />}
-      {showLink && <LinkModal productoId={productoId} variante={variante} onClose={() => setShowLink(false)} onLinked={() => { onRefresh(); setShowLink(false); onToast("Variante(s) vinculadas"); }} />}
-    </>
-  );
-}
-
-// ── Producto Card ─────────────────────────────────────────────────────────────
-function ProductoCard({ producto, onRefresh, onToast }: { producto: Producto; onRefresh: () => void; onToast: (m: string, t?: string) => void }) {
+function ProductoCard({ producto, onRefresh, onToast }) {
   const [expanded, setExpanded] = useState(false);
-  const [showAddVar, setShowAddVar] = useState(false);
-  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; label: string } | null>(null);
+  const [showAddVariante, setShowAddVariante] = useState(false);
+  const [newVarLabel, setNewVarLabel] = useState("");
+  const [newVarStock, setNewVarStock] = useState("");
+  const [adjust, setAdjust] = useState(null);
+  const [link, setLink] = useState(null);
 
-  const totalStock = producto.variantes.reduce((a, v) => a + v.stock, 0);
-  const sinStock = producto.variantes.filter(v => v.stock === 0).length;
-  const bajStock = producto.variantes.filter(v => v.stock > 0 && v.stock <= 5).length;
-  const variantesConLinks = producto.variantes.filter(v => v.links.length > 0);
+  async function handleAddVariante() {
+    if (!newVarLabel) return;
+    try {
+      await api("POST", `/productos/${producto.id}/variantes`, { label: newVarLabel, stock: parseInt(newVarStock) || 0 });
+      setNewVarLabel(""); setNewVarStock(""); setShowAddVariante(false);
+      onRefresh();
+      onToast("Variante creada", "success");
+    } catch (e) { onToast(e.message, "error"); }
+  }
 
   async function handleSyncAll() {
-    if (variantesConLinks.length === 0) { onToast("Sin variantes vinculadas", "error"); return; }
-    setSyncProgress({ current: 0, total: variantesConLinks.length, label: "Iniciando..." });
-    let ok = 0;
-    for (let i = 0; i < variantesConLinks.length; i++) {
-      const v = variantesConLinks[i];
-      setSyncProgress({ current: i, total: variantesConLinks.length, label: `Sincronizando: ${v.label}` });
-      try { await api("POST", `/productos/${producto.id}/variantes/${v.id}/sync`); ok++; } catch (_e) { }
-    }
-    setSyncProgress({ current: variantesConLinks.length, total: variantesConLinks.length, label: `Completado: ${ok}/${variantesConLinks.length}` });
-    setTimeout(() => { setSyncProgress(null); onRefresh(); onToast(`Sync completo: ${ok} variante(s)`); }, 1200);
+    try {
+      const r = await api("POST", `/productos/${producto.id}/sync`);
+      onToast(`Sync OK: ${r.results?.length || 0} variante(s)`, "success");
+    } catch (e) { onToast(e.message, "error"); }
   }
 
-  async function handleDelete() {
-    if (!confirm(`¿Eliminar "${producto.nombre}"?`)) return;
+  async function handleDeleteProducto() {
+    if (!confirm(`¿Eliminar producto ${producto.nombre}?`)) return;
     try { await api("DELETE", `/productos/${producto.id}`); onRefresh(); }
-    catch (e: unknown) { onToast(e instanceof Error ? e.message : "Error", "error"); }
+    catch (e) { onToast(e.message, "error"); }
   }
+
+  async function handleDeleteVariante(varId) {
+    try { await api("DELETE", `/productos/${producto.id}/variantes/${varId}`); onRefresh(); }
+    catch (e) { onToast(e.message, "error"); }
+  }
+
+  async function handleUnlink(varId, variant_id) {
+    try { await api("DELETE", `/productos/${producto.id}/variantes/${varId}/links/${variant_id}`); onRefresh(); }
+    catch (e) { onToast(e.message, "error"); }
+  }
+
+  async function handleSyncVariante(varId) {
+    try {
+      const r = await api("POST", `/productos/${producto.id}/variantes/${varId}/sync`);
+      onToast(`Sync OK: ${r.updated} link(s)`, "success");
+    } catch (e) { onToast(e.message, "error"); }
+  }
+
+  const totalStock = producto.variantes.reduce((a, v) => a + v.stock, 0);
+  const stockColor = totalStock === 0 ? "#ef4444" : totalStock <= 5 ? "#f59e0b" : "#22c55e";
 
   return (
     <>
-      <div style={{ ...card, marginBottom: 10, overflow: "hidden", transition: "border-color 0.15s" }}>
-        {/* Header */}
-        <div style={{ padding: "16px 20px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16 }} onClick={() => setExpanded(!expanded)}>
+      <div style={{ background: "#0f172a", border: `1px solid ${expanded ? "#334155" : "#1e293b"}`, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ padding: "16px 20px", cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }} onClick={() => setExpanded(!expanded)}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: stockColor, flexShrink: 0, boxShadow: `0 0 8px ${stockColor}` }} />
           <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 5 }}>
-              <span style={{ fontFamily: T.font, fontWeight: 600, color: C.text, fontSize: 15 }}>{producto.nombre}</span>
-              <span style={{ fontFamily: T.mono, color: C.textMuted, fontSize: 11 }}>{producto.id}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+              <span style={{ fontFamily: "monospace", fontWeight: 700, color: "#f8fafc", fontSize: 14 }}>{producto.id}</span>
+              <span style={{ color: "#64748b", fontSize: 13 }}>{producto.nombre}</span>
             </div>
-            <div style={{ display: "flex", gap: 16, fontSize: 12, fontFamily: T.font }}>
-              <span style={{ color: C.textMuted }}>{producto.variantes.length} variantes</span>
-              <span style={{ color: C.textMuted }}>Stock total: <span style={{ fontFamily: T.mono, color: C.text, fontWeight: 600 }}>{totalStock}</span></span>
-              {sinStock > 0 && <span style={{ color: C.red }}>{sinStock} sin stock</span>}
-              {bajStock > 0 && <span style={{ color: C.amber }}>{bajStock} stock bajo</span>}
+            <div style={{ color: "#475569", fontSize: 12 }}>
+              {producto.variantes.length} variante(s) · stock total: <span style={{ color: stockColor, fontFamily: "monospace", fontWeight: 700 }}>{totalStock}</span>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span style={{ color: C.textMuted, fontSize: 14, transition: "transform 0.2s", transform: expanded ? "rotate(180deg)" : "rotate(0deg)", display: "inline-block" }}>▾</span>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <Badge color="blue">{producto.variantes.length} var</Badge>
+            <span style={{ color: "#334155", fontSize: 16 }}>{expanded ? "▲" : "▼"}</span>
           </div>
         </div>
 
-        {/* Actions */}
-        <div style={{ padding: "0 20px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => { setShowAddVar(true); setExpanded(true); }} style={btnSecondary}>+ Variante</button>
-            <button onClick={handleSyncAll} disabled={!!syncProgress} style={{ ...btnGreen, opacity: syncProgress ? 0.6 : 1 }}>
-              {syncProgress ? `Sync ${syncProgress.current}/${syncProgress.total}` : "↑ Sync todo"}
-            </button>
-            <button onClick={handleDelete} style={{ ...btnRed, marginLeft: "auto" }}>Eliminar</button>
-          </div>
-          {syncProgress && <ProgressBar current={syncProgress.current} total={syncProgress.total} label={syncProgress.label} />}
+        <div style={{ padding: "0 20px 14px", display: "flex", gap: 8 }}>
+          <button onClick={() => setExpanded(true) || setShowAddVariante(true)} style={{ padding: "6px 12px", background: "#1e293b", color: "#94a3b8", border: "1px solid #334155", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>+ Variante</button>
+          <button onClick={handleSyncAll} style={{ padding: "6px 12px", background: "#065f46", color: "#4ade80", border: "1px solid #166534", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>↑ Sync todo</button>
+          <button onClick={handleDeleteProducto} style={{ marginLeft: "auto", padding: "6px 10px", background: "none", color: "#64748b", border: "1px solid #334155", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>🗑</button>
         </div>
 
-        {/* Variantes */}
         {expanded && (
-          <div style={{ borderTop: `1px solid ${C.border}`, padding: "14px 20px" }}>
+          <div style={{ borderTop: "1px solid #1e293b", padding: "16px 20px" }}>
+            {showAddVariante && (
+              <div style={{ background: "#1e293b", borderRadius: 8, padding: 14, marginBottom: 16, display: "flex", gap: 8 }}>
+                <input style={{ flex: 1, background: "#0f172a", border: "1px solid #334155", borderRadius: 6, padding: "8px 10px", color: "#f8fafc", fontSize: 13, outline: "none" }}
+                  placeholder="Label (ej: Talle S)" value={newVarLabel} onChange={e => setNewVarLabel(e.target.value)} />
+                <input style={{ width: 80, background: "#0f172a", border: "1px solid #334155", borderRadius: 6, padding: "8px 10px", color: "#f8fafc", fontSize: 13, outline: "none" }}
+                  type="number" placeholder="Stock" value={newVarStock} onChange={e => setNewVarStock(e.target.value)} />
+                <button onClick={handleAddVariante} style={{ padding: "8px 14px", background: "#3b82f6", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 700 }}>Crear</button>
+                <button onClick={() => setShowAddVariante(false)} style={{ padding: "8px 10px", background: "none", border: "1px solid #334155", color: "#64748b", borderRadius: 6, cursor: "pointer" }}>✕</button>
+              </div>
+            )}
+
             {producto.variantes.length === 0 ? (
-              <p style={{ color: C.textDim, fontSize: 13, margin: 0, fontFamily: T.font }}>Sin variantes — presioná "+ Variante"</p>
-            ) : producto.variantes.map(v => (
-              <VarianteRow key={v.id} productoId={producto.id} variante={v} onRefresh={onRefresh} onToast={onToast} />
-            ))}
+              <p style={{ color: "#334155", fontSize: 13, margin: 0 }}>Sin variantes — agregá una con "+ Variante"</p>
+            ) : (
+              producto.variantes.map(v => (
+                <div key={v.id} style={{ background: "#1e293b", borderRadius: 8, padding: "12px 14px", marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ color: "#94a3b8", fontWeight: 600, fontSize: 13 }}>{v.label}</span>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={() => setAdjust(v)} style={{ padding: "4px 8px", background: "#0f172a", border: "1px solid #334155", color: "#94a3b8", borderRadius: 4, cursor: "pointer", fontSize: 11 }}>± Stock</button>
+                      <button onClick={() => setLink(v)} style={{ padding: "4px 8px", background: "#0f172a", border: "1px solid #334155", color: "#94a3b8", borderRadius: 4, cursor: "pointer", fontSize: 11 }}>+ Link TN</button>
+                      <button onClick={() => handleSyncVariante(v.id)} style={{ padding: "4px 8px", background: "#065f46", border: "1px solid #166534", color: "#4ade80", borderRadius: 4, cursor: "pointer", fontSize: 11 }}>↑ Sync</button>
+                      <button onClick={() => handleDeleteVariante(v.id)} style={{ padding: "4px 8px", background: "none", border: "1px solid #334155", color: "#64748b", borderRadius: 4, cursor: "pointer", fontSize: 11 }}>🗑</button>
+                    </div>
+                  </div>
+                  <StockBar stock={v.stock} max={Math.max(20, v.stock * 2 || 20)} />
+                  {v.links?.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      {v.links.map(l => (
+                        <div key={l.variant_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px", background: "#0d1a2e", borderRadius: 4, marginTop: 4, fontSize: 11 }}>
+                          <span style={{ color: "#64748b" }}>{l.label || `P:${l.product_id} V:${l.variant_id}`}</span>
+                          <button onClick={() => handleUnlink(v.id, l.variant_id)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 14 }}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {v.log?.length > 0 && (
+                    <div style={{ marginTop: 8, fontSize: 11, color: "#475569" }}>
+                      Último mov: <span style={{ fontFamily: "monospace" }}>{fmt(v.log[0]?.ts)}</span> · {v.log[0]?.action} · stock: {v.log[0]?.stock}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
         )}
       </div>
 
-      {showAddVar && <AddVarianteModal productoId={producto.id} onClose={() => setShowAddVar(false)} onAdded={() => { onRefresh(); setShowAddVar(false); onToast("Variante agregada"); }} />}
+      {adjust && <AdjustStockModal productoId={producto.id} varianteId={adjust.id} label={adjust.label} current={adjust.stock} onClose={() => setAdjust(null)} onAdjusted={() => { onRefresh(); onToast("Stock actualizado", "success"); setAdjust(null); }} />}
+      {link && <LinkVariantModal productoId={producto.id} varianteId={link.id} onClose={() => setLink(null)} onLinked={() => { onRefresh(); setLink(null); onToast("Link creado", "success"); }} />}
     </>
   );
 }
 
-// ── Create Producto Modal ─────────────────────────────────────────────────────
-function CreateProductoModal({ onClose, onCreated, showToast, loadTnProducts }: { onClose: () => void; onCreated: () => void; showToast: (m: string, t?: string) => void; loadTnProducts: () => Promise<TnProduct[]> }) {
-  const [step, setStep] = useState<"select" | "confirm">("select");
-  const [tnProducts, setTnProducts] = useState<TnProduct[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<TnProduct | null>(null);
+function CreateMatchModal({ onClose, onCreated }) {
   const [nombre, setNombre] = useState("");
-  const [progress, setProgress] = useState<{ current: number; total: number; label: string } | null>(null);
+  const [tnProducts, setTnProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [prod1, setProd1] = useState(null);
+  const [prod2, setProd2] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
 
-  useEffect(() => { loadTnProducts().then(d => { setTnProducts(d); setLoading(false); }).catch(() => setLoading(false)); }, []);
+  useEffect(() => {
+    api("GET", "/tn-products").then(data => {
+      setTnProducts(Array.isArray(data) ? data : []);
+      setLoading(false);
+    }).catch(() => {
+      setErr("No se pudieron cargar los productos de Tiendanube");
+      setLoading(false);
+    });
+  }, []);
 
-  const q = search.toLowerCase();
-  const filtered = tnProducts
-    .filter(p => { const n = typeof p.name === "object" ? (p.name.es || "") : String(p.name); return !EXCLUIR.test(n); })
-    .filter(p => { const n = typeof p.name === "object" ? (p.name.es || "") : String(p.name); return !q || n.toLowerCase().includes(q); });
-
-  function getPName(p: TnProduct) { return typeof p.name === "object" ? (p.name.es || `Producto ${p.id}`) : String(p.name); }
-  function handleSelect(p: TnProduct) { setSelected(p); setNombre(getPName(p)); setStep("confirm"); }
-
-  async function handleCreate() {
-    if (!selected || !nombre) return;
-    const variantesConStock = selected.variants.filter(v => v.stock !== null && v.stock > 0);
-    const total = 1 + variantesConStock.length * 2;
-    let paso = 0;
-    setProgress({ current: 0, total, label: "Creando producto..." });
+  async function handle() {
+    if (!nombre.trim()) return setErr("El nombre del Match es obligatorio");
+    if (!prod1) return setErr("Seleccioná el Producto 1");
+    if (!prod2) return setErr("Seleccioná el Producto 2");
+    if (prod1.id === prod2.id) return setErr("Los dos productos deben ser distintos");
+    setSaving(true);
     try {
-      await api("POST", "/productos", { id: nombre, nombre });
-      paso++; setProgress({ current: paso, total, label: "Importando variantes..." });
-      const pName = getPName(selected);
-      const productoId = nombre.toUpperCase().replace(/\s+/g, "_");
-      for (const v of variantesConStock) {
-        const vLabel = v.values?.map(vv => Object.values(vv)[0]).join(" / ") || `Variante ${v.id}`;
-        setProgress({ current: paso, total, label: `Creando: ${vLabel}` });
-        const nv = await api("POST", `/productos/${productoId}/variantes`, { label: vLabel, stock: v.stock });
-        paso++; setProgress({ current: paso, total, label: `Vinculando: ${vLabel}` });
-        await api("POST", `/productos/${productoId}/variantes/${nv.id}/links`, { product_id: String(selected.id), variant_id: String(v.id), label: `${pName} · ${vLabel}` });
-        paso++;
-      }
-      setProgress({ current: total, total, label: `Listo — ${variantesConStock.length} variante(s) importadas` });
-      showToast(`"${nombre}" creado con ${variantesConStock.length} variante(s)`);
-      setTimeout(onCreated, 1000);
-    } catch (e: unknown) { showToast(e instanceof Error ? e.message : "Error", "error"); setProgress(null); }
+      const r = await api("POST", "/matchs", {
+        nombre: nombre.trim(),
+        producto1: { tn_product_id: String(prod1.id), nombre: prod1.name?.es || prod1.name || `Producto ${prod1.id}` },
+        producto2: { tn_product_id: String(prod2.id), nombre: prod2.name?.es || prod2.name || `Producto ${prod2.id}` }
+      });
+      onCreated(r);
+    } catch (e) { setErr(e.message); }
+    setSaving(false);
   }
 
-  const variantesConStock = selected?.variants.filter(v => v.stock !== null && v.stock > 0) || [];
-  const variantesSinStock = selected?.variants.filter(v => !v.stock || v.stock === 0) || [];
+  const inp = { background: "#1e293b", border: "1px solid #334155", borderRadius: 6, padding: "10px 12px", color: "#f8fafc", width: "100%", fontSize: 13, outline: "none", boxSizing: "border-box" };
+  const lbl = { display: "block", color: "#94a3b8", fontSize: 12, marginBottom: 6, fontWeight: 600, letterSpacing: "0.05em" };
+
+  function ProductSelect({ label, value, onChange }) {
+    return (
+      <div>
+        <label style={lbl}>{label}</label>
+        {loading ? (
+          <div style={{ color: "#64748b", fontSize: 13, padding: "10px 0" }}>Cargando productos...</div>
+        ) : (
+          <select
+            value={value?.id || ""}
+            onChange={e => {
+              const found = tnProducts.find(p => String(p.id) === e.target.value);
+              onChange(found || null);
+            }}
+            style={{ ...inp, cursor: "pointer" }}
+          >
+            <option value="">— Elegir producto —</option>
+            {tnProducts.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.name?.es || p.name || `Producto ${p.id}`}
+              </option>
+            ))}
+          </select>
+        )}
+        {value && (
+          <div style={{ marginTop: 6, padding: "6px 10px", background: "#0d1a2e", border: "1px solid #1e3a5f", borderRadius: 4, color: "#60a5fa", fontSize: 12, fontFamily: "monospace" }}>
+            ID: {value.id} · {value.variants?.length || 0} variante(s)
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <Modal title={step === "select" ? "Nuevo producto" : "Confirmar importación"} subtitle={step === "select" ? "Elegí el producto base de Tiendanube" : nombre} onClose={onClose} wide>
-      {step === "select" ? (
-        <>
-          <input autoFocus style={{ ...inp, marginBottom: 14 }} placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
-          {loading && <p style={{ color: C.textMuted, textAlign: "center", fontFamily: T.font }}>Cargando productos...</p>}
-          <div style={{ maxHeight: 400, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-            {filtered.map(p => {
-              const n = getPName(p);
-              const conStock = p.variants.filter(v => v.stock && v.stock > 0).length;
-              return (
-                <div key={p.id} onClick={() => handleSelect(p)}
-                  style={{ padding: "13px 16px", borderRadius: 8, cursor: "pointer", background: C.bg, border: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", transition: "border-color 0.1s" }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = C.borderHover)}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}>
-                  <div>
-                    <div style={{ color: C.text, fontWeight: 500, fontSize: 14, fontFamily: T.font }}>{n}</div>
-                    <div style={{ color: C.textMuted, fontSize: 12, marginTop: 3, fontFamily: T.font }}>{p.variants.length} variantes · {conStock} con stock</div>
-                  </div>
-                  <span style={{ color: C.textMuted, fontSize: 16 }}>→</span>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      ) : (
-        <>
-          <div style={{ marginBottom: 18 }}>
-            <label style={lbl}>Nombre en Stock Central</label>
-            <input style={inp} value={nombre} onChange={e => setNombre(e.target.value)} disabled={!!progress} autoFocus />
-            <p style={{ color: C.textMuted, fontSize: 12, marginTop: 6, fontFamily: T.font }}>Podés cambiarle el nombre, ej: "BABY TEE"</p>
-          </div>
-          <div style={{ ...card, padding: 14, marginBottom: 16 }}>
-            <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, fontFamily: T.font }}>
-              Variantes a importar ({variantesConStock.length})
-            </div>
-            {variantesConStock.map(v => {
-              const vl = v.values?.map(vv => Object.values(vv)[0]).join(" / ") || `Variante ${v.id}`;
-              return (
-                <div key={v.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
-                  <span style={{ color: C.text, fontFamily: T.font }}>{vl}</span>
-                  <span style={{ color: C.accent, fontFamily: T.mono, fontWeight: 600 }}>{v.stock}</span>
-                </div>
-              );
-            })}
-            {variantesConStock.length === 0 && <p style={{ color: C.textMuted, fontSize: 13, margin: 0, fontFamily: T.font }}>Ninguna variante tiene stock</p>}
-            {variantesSinStock.length > 0 && <p style={{ color: C.textMuted, fontSize: 12, marginTop: 8, marginBottom: 0, fontFamily: T.font }}>{variantesSinStock.length} sin stock no se importarán</p>}
-          </div>
-          {progress && <div style={{ marginBottom: 16 }}><ProgressBar current={progress.current} total={progress.total} label={progress.label} /></div>}
-          <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={() => setStep("select")} style={{ ...btnSecondary, opacity: progress ? 0.4 : 1 }} disabled={!!progress}>← Volver</button>
-            <button onClick={handleCreate} disabled={!!progress || !nombre} style={{ ...btnPrimary, flex: 1, opacity: progress || !nombre ? 0.5 : 1 }}>
-              {progress ? `Importando ${progress.current}/${progress.total}...` : `Crear e importar ${variantesConStock.length} variante(s)`}
-            </button>
-          </div>
-        </>
-      )}
+    <Modal title="Nuevo Match 💞" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div>
+          <label style={lbl}>NOMBRE DEL MATCH</label>
+          <input style={inp} placeholder='ej: "Wall-E y Eva"' value={nombre} onChange={e => setNombre(e.target.value)} />
+        </div>
+        <ProductSelect label="PRODUCTO 1" value={prod1} onChange={setProd1} />
+        <div style={{ textAlign: "center", color: "#475569", fontSize: 20 }}>+</div>
+        <ProductSelect label="PRODUCTO 2" value={prod2} onChange={setProd2} />
+        {err && <div style={{ color: "#f87171", fontSize: 13 }}>{err}</div>}
+        <button onClick={handle} disabled={saving || loading} style={{ padding: "12px 0", background: "#ec4899", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
+          {saving ? "Creando..." : "Crear Match 💞"}
+        </button>
+      </div>
     </Modal>
   );
 }
 
-// ── Config Panel ──────────────────────────────────────────────────────────────
-function ConfigPanel({ onSaved }: { onSaved: () => void }) {
-  const [token, setToken] = useState("");
-  const [storeId, setStoreId] = useState("");
-  const [webhookUrl, setWebhookUrl] = useState("");
-  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+function MatchsView({ onToast }) {
+  const [matchs, setMatchs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
 
-  async function handleSave() {
-    try { await api("POST", "/config", { access_token: token, store_id: storeId }); setResult({ ok: true, msg: "Credenciales guardadas" }); setTimeout(onSaved, 800); }
-    catch (e: unknown) { setResult({ ok: false, msg: e instanceof Error ? e.message : "Error" }); }
+  async function loadMatchs() {
+    try {
+      const data = await api("GET", "/matchs");
+      setMatchs(Array.isArray(data) ? data : []);
+    } catch (e) { onToast("Error cargando Matchs", "error"); }
+    setLoading(false);
   }
-  async function handleTest() {
-    try { const r = await api("POST", "/config/test"); setResult({ ok: true, msg: r.store_name }); }
-    catch (e: unknown) { setResult({ ok: false, msg: e instanceof Error ? e.message : "Error" }); }
+
+  useEffect(() => { loadMatchs(); }, []);
+
+  async function handleDelete(id, nombre) {
+    if (!confirm(`¿Eliminar Match "${nombre}"?`)) return;
+    try {
+      await api("DELETE", `/matchs/${id}`);
+      setMatchs(prev => prev.filter(m => m.id !== id));
+      onToast("Match eliminado", "success");
+    } catch (e) { onToast(e.message, "error"); }
   }
-  async function handleWebhook() {
-    if (!webhookUrl) return;
-    try { const r = await api("POST", "/config/webhook", { webhook_url: webhookUrl }); setResult({ ok: true, msg: r.message }); }
-    catch (e: unknown) { setResult({ ok: false, msg: e instanceof Error ? e.message : "Error" }); }
-  }
+
+  const BACKEND = "https://stock-central-production.up.railway.app";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 480 }}>
-      <div><label style={lbl}>Store ID</label><input style={inp} value={storeId} onChange={e => setStoreId(e.target.value)} placeholder="1443972" /></div>
-      <div><label style={lbl}>Access Token</label><input style={inp} type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="af56c0..." /></div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={handleSave} style={btnPrimary}>Guardar</button>
-        <button onClick={handleTest} style={btnSecondary}>Probar conexión</button>
-      </div>
-      <div><label style={lbl}>URL pública (webhooks)</label><input style={inp} value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="https://stock-central-production.up.railway.app" /></div>
-      <button onClick={handleWebhook} style={{ ...btnGreen, padding: "10px 18px", fontSize: 13 }}>Registrar webhooks en Tiendanube</button>
-      {result && (
-        <div style={{ padding: "12px 16px", borderRadius: 8, background: result.ok ? C.accentDim : C.redDim, border: `1px solid ${result.ok ? C.accentBorder : "#3f1515"}`, color: result.ok ? C.accent : C.red, fontSize: 13, fontFamily: T.font }}>
-          {result.msg}
+    <div>
+      {/* Header toolbar */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div>
+          <div style={{ color: "#94a3b8", fontSize: 13 }}>
+            {matchs.length} Match{matchs.length !== 1 ? "s" : ""} configurado{matchs.length !== 1 ? "s" : ""}
+          </div>
         </div>
+        <button onClick={() => setShowCreate(true)} style={{ padding: "9px 16px", background: "#ec4899", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+          + Nuevo Match
+        </button>
+      </div>
+
+      {/* Info box */}
+      <div style={{ background: "#0d1a2e", border: "1px solid #1e3a5f", borderRadius: 8, padding: "12px 16px", marginBottom: 20, fontSize: 12, color: "#64748b", lineHeight: 1.7 }}>
+        <strong style={{ color: "#60a5fa" }}>¿Cómo funciona?</strong> Al crear un Match, el script en tu tienda detecta automáticamente
+        la página de producto y reemplaza el botón de compra por dos selectores de talle (uno por producto),
+        agregando ambos al carrito en un solo click.
+        <br />
+        <strong style={{ color: "#94a3b8" }}>Endpoint público del widget: </strong>
+        <span style={{ fontFamily: "monospace", color: "#fbbf24" }}>{BACKEND}/api/matchs</span>
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div style={{ color: "#475569", textAlign: "center", padding: 40 }}>Cargando...</div>
+      ) : matchs.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "60px 20px", color: "#334155" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>💞</div>
+          <p style={{ fontSize: 15 }}>No hay Matchs todavía</p>
+          <p style={{ fontSize: 13 }}>Creá tu primer Match con el botón "+ Nuevo Match"</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {matchs.map(m => (
+            <div key={m.id} style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, padding: "16px 20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <span style={{ fontSize: 16 }}>💞</span>
+                    <span style={{ fontWeight: 700, color: "#f8fafc", fontSize: 15 }}>{m.nombre}</span>
+                    <span style={{ fontFamily: "monospace", fontSize: 10, color: "#334155" }}>{m.id}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ padding: "6px 12px", background: "#1e293b", borderRadius: 6, fontSize: 12 }}>
+                      <span style={{ color: "#64748b" }}>Producto 1 · </span>
+                      <span style={{ color: "#94a3b8" }}>{m.producto1.nombre}</span>
+                      <span style={{ color: "#475569", fontFamily: "monospace", marginLeft: 6 }}>#{m.producto1.tn_product_id}</span>
+                    </div>
+                    <span style={{ color: "#475569" }}>+</span>
+                    <div style={{ padding: "6px 12px", background: "#1e293b", borderRadius: 6, fontSize: 12 }}>
+                      <span style={{ color: "#64748b" }}>Producto 2 · </span>
+                      <span style={{ color: "#94a3b8" }}>{m.producto2.nombre}</span>
+                      <span style={{ color: "#475569", fontFamily: "monospace", marginLeft: 6 }}>#{m.producto2.tn_product_id}</span>
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => handleDelete(m.id, m.nombre)} style={{ background: "none", border: "1px solid #334155", color: "#64748b", cursor: "pointer", borderRadius: 6, padding: "6px 10px", fontSize: 12 }}>
+                  🗑 Eliminar
+                </button>
+              </div>
+              {/* Script hint */}
+              <div style={{ marginTop: 12, padding: "8px 12px", background: "#020817", borderRadius: 6, fontFamily: "monospace", fontSize: 11, color: "#475569" }}>
+                IDs detectados por el script: <span style={{ color: "#fbbf24" }}>{m.producto1.tn_product_id}</span> + <span style={{ color: "#fbbf24" }}>{m.producto2.tn_product_id}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showCreate && (
+        <CreateMatchModal
+          onClose={() => setShowCreate(false)}
+          onCreated={m => { setMatchs(prev => [...prev, m]); setShowCreate(false); onToast(`Match "${m.nombre}" creado`, "success"); }}
+        />
       )}
     </div>
   );
 }
 
-// ── Main App ──────────────────────────────────────────────────────────────────
+
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+
 export default function App() {
-  const [view, setView] = useState<"loading" | "config" | "dashboard">("loading");
-  const [productos, setProductos] = useState<Producto[]>([]);
-  const [stats, setStats] = useState<Stats | null>(null);
+  const [view, setView] = useState("loading"); // loading | config | dashboard
+  const [tab, setTab] = useState("productos"); // "productos" | "matchs"
+  const [productos, setProductos] = useState([]);
+  const [stats, setStats] = useState(null);
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);
-  const [tnCache, setTnCache] = useState<TnProduct[]>([]);
+  const [toast, setToast] = useState(null);
 
-  const showToast = useCallback((msg: string, type = "success") => setToast({ msg, type }), []);
+  const showToast = useCallback((msg, type = "success") => setToast({ msg, type }), []);
 
   const loadData = useCallback(async () => {
     try {
-      const [p, s] = await Promise.all([api("GET", "/productos"), api("GET", "/stats")]);
-      setProductos(p); setStats(s);
-    } catch (_e) { }
+      const [prodsData, statsData] = await Promise.all([
+        api("GET", "/productos"),
+        api("GET", "/stats")
+      ]);
+      setProductos(prodsData);
+      setStats(statsData);
+    } catch (e) { }
   }, []);
 
   useEffect(() => {
-    // Set page title
-    document.title = "Stock Central de Minch";
-    api("GET", "/config").then((cfg: { has_token: boolean }) => {
-      setView(cfg.has_token ? "dashboard" : "config");
-      if (cfg.has_token) loadData();
+    api("GET", "/config").then(cfg => {
+      if (cfg.has_token) { setView("dashboard"); loadData(); }
+      else setView("config");
     }).catch(() => setView("config"));
   }, [loadData]);
 
-  async function loadTnProducts() {
-    if (tnCache.length > 0) return tnCache;
-    const data = await api("GET", "/tn-products");
-    setTnCache(data); return data;
-  }
-
-  const filtered = productos.filter(p => !search || p.nombre.toLowerCase().includes(search.toLowerCase()) || p.id.toLowerCase().includes(search.toLowerCase()));
-
-  if (view === "loading") return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.font }}>
-      <div style={{ textAlign: "center" }}>
-        <div style={{ width: 32, height: 32, border: `2px solid ${C.border}`, borderTopColor: C.accent, borderRadius: "50%", margin: "0 auto 16px", animation: "spin 0.8s linear infinite" }} />
-        <p style={{ color: C.textMuted, fontSize: 14 }}>Conectando...</p>
-      </div>
-    </div>
+  const filtered = productos.filter(p =>
+    !search || p.id.toLowerCase().includes(search.toLowerCase()) || p.nombre?.toLowerCase().includes(search.toLowerCase())
   );
 
-  return (
-    <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: T.font }}>
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes slideIn { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        * { box-sizing: border-box; }
-        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
-        input:focus { border-color: #3f3f46 !important; }
-      `}</style>
+  if (view === "loading") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#020817", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ color: "#334155", fontSize: 14 }}>Conectando...</div>
+      </div>
+    );
+  }
 
+  // Tab button style helper
+  function tabBtn(id, label, emoji) {
+    const active = tab === id;
+    return (
+      <button onClick={() => setTab(id)} style={{
+        padding: "6px 14px", borderRadius: 6, border: "1px solid",
+        borderColor: active ? (id === "matchs" ? "#9d174d" : "#1e3a5f") : "#1e293b",
+        background: active ? (id === "matchs" ? "#2e0d1a" : "#0d1a2e") : "transparent",
+        color: active ? (id === "matchs" ? "#f472b6" : "#60a5fa") : "#64748b",
+        cursor: "pointer", fontSize: 12, fontWeight: active ? 700 : 400
+      }}>{emoji} {label}</button>
+    );
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#020817", color: "#f8fafc", fontFamily: "'DM Mono', 'Fira Code', 'Courier New', monospace" }}>
       {/* Header */}
-      <div style={{ borderBottom: `1px solid ${C.border}`, padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 58, position: "sticky", top: 0, background: `${C.bg}ee`, backdropFilter: "blur(12px)", zIndex: 50 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 30, height: 30, background: C.accent, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>📦</div>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 15, color: C.text, letterSpacing: "-0.01em" }}>Stock Central</div>
-            <div style={{ fontSize: 11, color: C.textMuted, marginTop: -2 }}>Minch · Tiendanube</div>
-          </div>
+      <div style={{ borderBottom: "1px solid #1e293b", padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 56 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 28, height: 28, background: "linear-gradient(135deg, #3b82f6, #06b6d4)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📦</div>
+          <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: "0.05em", color: "#f8fafc" }}>STOCK CENTRAL</span>
+          <span style={{ color: "#334155", fontSize: 12 }}>/ Tiendanube</span>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {stats?.active_reservations !== undefined && stats.active_reservations > 0 && (
-            <span style={{ background: C.amberDim, color: C.amber, border: `1px solid #3d2600`, borderRadius: 6, padding: "4px 10px", fontSize: 12, fontFamily: T.mono }}>
-              {stats.active_reservations} reserva(s) activa(s)
-            </span>
+        <div style={{ display: "flex", gap: 8 }}>
+          {view === "dashboard" && (
+            <button onClick={() => setView("config")} style={{ padding: "6px 12px", background: "none", color: "#64748b", border: "1px solid #1e293b", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
+              ⚙ Config
+            </button>
           )}
-          {view === "dashboard" && <button onClick={() => setView("config")} style={btnSecondary}>Configuración</button>}
-          {view === "config" && productos.length > 0 && <button onClick={() => setView("dashboard")} style={btnSecondary}>← Dashboard</button>}
+          {view === "config" && productos.length > 0 && (
+            <button onClick={() => setView("dashboard")} style={{ padding: "6px 12px", background: "none", color: "#64748b", border: "1px solid #1e293b", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
+              ← Dashboard
+            </button>
+          )}
         </div>
       </div>
 
-      {view === "config" && (
-        <div style={{ maxWidth: 600, margin: "48px auto", padding: "0 24px" }}>
-          <h2 style={{ color: C.text, fontSize: 22, fontWeight: 600, marginBottom: 8 }}>Configuración</h2>
-          <p style={{ color: C.textMuted, fontSize: 14, marginBottom: 32 }}>Conectá Stock Central con tu tienda de Tiendanube.</p>
-          <ConfigPanel onSaved={() => { setView("dashboard"); loadData(); }} />
-        </div>
-      )}
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "24px 20px" }}>
+        {view === "config" && <ConfigView onSaved={() => { setView("dashboard"); loadData(); }} />}
 
-      {view === "dashboard" && (
-        <div style={{ maxWidth: 960, margin: "0 auto", padding: "28px 24px" }}>
-          {/* Stats */}
-          {stats && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 24 }}>
-              {[
-                { label: "Productos", value: stats.total_productos, color: C.text },
-                { label: "Variantes", value: stats.total_variantes, color: C.text },
-                { label: "Links", value: stats.total_links, color: C.text },
-                { label: "Stock bajo", value: stats.stock_bajo, color: C.amber },
-                { label: "Sin stock", value: stats.sin_stock, color: C.red },
-              ].map(s => (
-                <div key={s.label} style={{ ...card, padding: "16px 18px" }}>
-                  <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>{s.label}</div>
-                  <div style={{ color: s.color, fontFamily: T.mono, fontSize: 24, fontWeight: 700 }}>{s.value}</div>
+        {view === "dashboard" && (
+          <>
+            {/* Stats */}
+            {stats && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 24 }}>
+                {[
+                  { label: "Productos", value: stats.total_productos, color: "#60a5fa" },
+                  { label: "Variantes", value: stats.total_variantes, color: "#a78bfa" },
+                  { label: "Links TN", value: stats.total_links, color: "#34d399" },
+                  { label: "Stock bajo", value: stats.stock_bajo, color: "#fbbf24" },
+                  { label: "Sin stock", value: stats.sin_stock, color: "#f87171" },
+                ].map(s => (
+                  <div key={s.label} style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 10, padding: "14px 16px" }}>
+                    <div style={{ color: "#475569", fontSize: 11, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{s.label}</div>
+                    <div style={{ color: s.color, fontFamily: "monospace", fontSize: 24, fontWeight: 700 }}>{s.value}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+              {tabBtn("productos", "Productos", "📦")}
+              {tabBtn("matchs", "Matchs", "💞")}
+            </div>
+
+            {/* Tab: Productos */}
+            {tab === "productos" && (
+              <>
+                <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
+                  <input
+                    style={{ flex: 1, background: "#0f172a", border: "1px solid #1e293b", borderRadius: 6, padding: "9px 14px", color: "#f8fafc", fontSize: 13, outline: "none", fontFamily: "inherit" }}
+                    placeholder="Buscar producto..."
+                    value={search} onChange={e => setSearch(e.target.value)}
+                  />
+                  <button onClick={loadData} style={{ padding: "9px 12px", background: "#0f172a", border: "1px solid #1e293b", borderRadius: 6, color: "#64748b", cursor: "pointer", fontSize: 16 }} title="Actualizar">↻</button>
+                  <button onClick={() => setShowCreate(true)} style={{ padding: "9px 16px", background: "#3b82f6", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>
+                    + Nuevo Producto
+                  </button>
                 </div>
-              ))}
-            </div>
-          )}
 
-          {/* Toolbar */}
-          <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-            <input style={{ ...inp, flex: 1 }} placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
-            <button onClick={loadData} style={{ ...btnSecondary, padding: "9px 14px" }} title="Actualizar">↻</button>
-            <button onClick={() => setShowCreate(true)} style={btnPrimary}>+ Nuevo producto</button>
-          </div>
+                {filtered.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "60px 20px", color: "#334155" }}>
+                    <div style={{ fontSize: 40, marginBottom: 12 }}>📦</div>
+                    <p style={{ fontSize: 16 }}>{productos.length === 0 ? "No hay productos todavía" : "Sin resultados"}</p>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {filtered.map(p => (
+                      <ProductoCard key={p.id} producto={p} onRefresh={loadData} onToast={showToast} />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
 
-          {/* Lista */}
-          {filtered.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "72px 20px", color: C.textMuted }}>
-              <div style={{ fontSize: 36, marginBottom: 16 }}>📦</div>
-              <p style={{ fontSize: 15, fontWeight: 500, color: C.text }}>{productos.length === 0 ? "Sin productos todavía" : "Sin resultados"}</p>
-              {productos.length === 0 && <p style={{ fontSize: 13, marginTop: 6 }}>Creá tu primer producto con el botón "+ Nuevo producto"</p>}
-            </div>
-          ) : filtered.map(p => (
-            <ProductoCard key={p.id} producto={p} onRefresh={loadData} onToast={showToast} />
-          ))}
+            {/* Tab: Matchs */}
+            {tab === "matchs" && <MatchsView onToast={showToast} />}
 
-          {/* Activity */}
-          {stats && <ActivityPanel log={stats.recent_log} />}
-        </div>
-      )}
+            {/* Recent log */}
+            {tab === "productos" && stats?.recent_log?.length > 0 && (
+              <div style={{ marginTop: 28, background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, padding: 20 }}>
+                <div style={{ color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>Actividad reciente</div>
+                {stats.recent_log.map((l, i) => (
+                  <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "6px 0", borderBottom: i < stats.recent_log.length - 1 ? "1px solid #1e293b" : "none" }}>
+                    <span style={{ color: "#475569", fontSize: 11, fontFamily: "monospace", minWidth: 90 }}>{fmt(l.ts)}</span>
+                    <span style={{ fontFamily: "monospace", fontSize: 12, color: "#60a5fa", minWidth: 80 }}>{l.producto}</span>
+                    <span style={{ color: "#64748b", fontSize: 12 }}>{l.variante}</span>
+                    <Badge color={l.action === "sale" ? "red" : l.action === "return" ? "green" : "gray"}>{l.action}</Badge>
+                    {l.delta !== undefined && <span style={{ color: l.delta > 0 ? "#4ade80" : "#f87171", fontFamily: "monospace", fontSize: 12 }}>{l.delta > 0 ? "+" : ""}{l.delta}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
 
-      {showCreate && (
-        <CreateProductoModal
-          onClose={() => setShowCreate(false)}
-          onCreated={() => { setShowCreate(false); loadData(); }}
-          showToast={showToast}
-          loadTnProducts={loadTnProducts}
-        />
-      )}
-
+      {showCreate && <CreateProductoModal onClose={() => setShowCreate(false)} onCreated={() => { loadData(); setShowCreate(false); showToast("Producto creado", "success"); }} />}
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
