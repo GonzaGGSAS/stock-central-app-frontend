@@ -107,7 +107,7 @@ type LogEntry = { ts: string; action: string; stock: number; delta?: number; rea
 type Variante = { id: string; label: string; stock: number; links: Link[]; log: LogEntry[] };
 type Producto = { id: string; nombre: string; variantes: Variante[] };
 type Stats = { total_productos: number; total_variantes: number; total_links: number; stock_bajo: number; sin_stock: number; active_reservations: number; recent_log: (LogEntry & { producto: string; variante: string })[] };
-type Match = { id: string; nombre: string; tn_match_product_id: string; producto1: { tn_product_id: string; nombre: string }; producto2: { tn_product_id: string; nombre: string }; createdAt: string };
+type Match = { id: string; nombre: string; tn_match_product_id: string; producto1: { tn_product_id: string; nombre: string; variantes?: {id:string;label:string;stock:number|null}[] }; producto2: { tn_product_id: string; nombre: string; variantes?: {id:string;label:string;stock:number|null}[] }; variantMap?: {v1id:string;v2id:string;tn_variant_id:string;label:string}[]; createdAt: string };
 
 // ── Progress Bar ──────────────────────────────────────────────────────────────
 function ProgressBar({ current, total, label }: { current: number; total: number; label: string }) {
@@ -792,6 +792,24 @@ function ConfigPanel({ onSaved }: { onSaved: () => void }) {
 }
 
 // ── Matchs ────────────────────────────────────────────────────────────────────
+import React from "react";
+
+function SyncMatchBtn({ matchId, onToast }: { matchId: string; onToast: (m: string, t?: string) => void }) {
+  const [syncing, setSyncing] = useState(false);
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      const r = await api("PUT", `/matchs/${matchId}/sync-stock`);
+      onToast(`Stock sincronizado: ${r.updated} variante(s)`);
+    } catch (e: unknown) { onToast(e instanceof Error ? e.message : "Error", "error"); }
+    setSyncing(false);
+  }
+  return (
+    <button onClick={handleSync} disabled={syncing} style={{ ...btnGreen, opacity: syncing ? 0.6 : 1, fontSize: 11 }}>
+      {syncing ? "Sincronizando..." : "↑ Sync stock"}
+    </button>
+  );
+}
 
 function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreated: (m: unknown) => void }) {
   const [nombre, setNombre] = useState("");
@@ -799,7 +817,6 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [loading, setLoading] = useState(true);
   const [prod1, setProd1] = useState<TnProduct | null>(null);
   const [prod2, setProd2] = useState<TnProduct | null>(null);
-  const [matchProduct, setMatchProduct] = useState<TnProduct | null>(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
@@ -812,15 +829,14 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
   async function handle() {
     if (!nombre.trim()) return setErr("El nombre es obligatorio");
-    if (!matchProduct) return setErr("Seleccioná el producto contenedor del Match");
     if (!prod1) return setErr("Seleccioná el Producto 1");
     if (!prod2) return setErr("Seleccioná el Producto 2");
     if (prod1.id === prod2.id) return setErr("Los productos deben ser distintos");
     setSaving(true);
+    setErr("");
     try {
       const r = await api("POST", "/matchs", {
         nombre: nombre.trim(),
-        tn_match_product_id: String(matchProduct.id),
         producto1: { tn_product_id: String(prod1.id), nombre: getPName(prod1) },
         producto2: { tn_product_id: String(prod2.id), nombre: getPName(prod2) },
       });
@@ -836,20 +852,16 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
         {loading ? (
           <div style={{ color: C.textMuted, fontSize: 13, fontFamily: T.font, padding: "10px 0" }}>Cargando...</div>
         ) : (
-          <select
-            value={value?.id || ""}
-            onChange={e => onChange(tnProducts.find(p => String(p.id) === e.target.value) || null)}
-            style={{ ...inp, cursor: "pointer" }}
-          >
+          <select value={value?.id || ""} onChange={e => onChange(tnProducts.find(p => String(p.id) === e.target.value) || null)} style={{ ...inp, cursor: "pointer" }}>
             <option value="">— Elegir producto —</option>
             {tnProducts.filter(p => !EXCLUIR.test(getPName(p))).map(p => (
-              <option key={p.id} value={p.id}>{getPName(p)}</option>
+              <option key={p.id} value={p.id}>{getPName(p)} ({p.variants?.filter(v => v.stock === null || v.stock > 0).length || 0} talles con stock)</option>
             ))}
           </select>
         )}
         {value && (
           <div style={{ marginTop: 6, padding: "6px 10px", background: C.bg, border: `1px solid ${C.blueBorder}`, borderRadius: 6, color: C.blue, fontSize: 11, fontFamily: T.mono }}>
-            ID #{value.id} · {value.variants?.length || 0} variante(s)
+            ID #{value.id} · {value.variants?.filter(v => v.stock === null || v.stock > 0).length || 0} talles con stock
           </div>
         )}
       </div>
@@ -857,18 +869,15 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
   }
 
   return (
-    <Modal title="Nuevo Match" subtitle="Combiná dos productos en una página" onClose={onClose}>
+    <Modal title="Nuevo Match" subtitle="Stock Central creará el producto en Tiendanube automáticamente" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ padding: "10px 14px", background: C.accentDim, border: `1px solid ${C.accentBorder}`, borderRadius: 8, fontSize: 12, color: C.accent, fontFamily: T.font, lineHeight: 1.6 }}>
+          <strong>Automático:</strong> Al crear el Match, Stock Central genera el producto combinado en Tiendanube con todas las combinaciones de talles y sincroniza el stock.
+        </div>
         <div>
           <label style={lbl}>Nombre del Match</label>
-          <input style={inp} placeholder='ej: Wall-E y Eva' value={nombre} onChange={e => setNombre(e.target.value)} autoFocus />
-        </div>
-        <div style={{ padding: "12px 14px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, color: C.textMuted, fontFamily: T.font, lineHeight: 1.6 }}>
-          <span style={{ color: C.amber, fontWeight: 600 }}>Antes de continuar:</span> creá un producto en Tiendanube llamado "Match [nombre]" con el precio del combo y las fotos. Ese es el <strong style={{ color: C.text }}>producto contenedor</strong>.
-        </div>
-        <ProductSelect label="Producto contenedor (la página del Match en TN)" value={matchProduct} onChange={setMatchProduct} />
-        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
-          <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12, fontFamily: T.font }}>Productos individuales (con stock real)</div>
+          <input style={inp} placeholder='ej: Match Wall-E y Eva' value={nombre} onChange={e => setNombre(e.target.value)} autoFocus />
+          <p style={{ margin: "6px 0 0", color: C.textMuted, fontSize: 12, fontFamily: T.font }}>Este será el nombre del producto en Tiendanube. Después podés agregarle fotos y precio desde el admin de TN.</p>
         </div>
         <ProductSelect label="Producto 1" value={prod1} onChange={setProd1} />
         <div style={{ textAlign: "center", color: C.textDim, fontSize: 20 }}>+</div>
@@ -876,7 +885,7 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
         {err && <p style={{ color: C.red, fontSize: 13, margin: 0, fontFamily: T.font }}>{err}</p>}
         <button onClick={handle} disabled={saving || loading}
           style={{ ...btnPrimary, background: C.pink, opacity: saving || loading ? 0.5 : 1 }}>
-          {saving ? "Creando..." : "Crear Match 💞"}
+          {saving ? "Creando producto en Tiendanube..." : "Crear Match 💞"}
         </button>
       </div>
     </Modal>
@@ -938,15 +947,21 @@ function MatchsView({ onToast }: { onToast: (m: string, t?: string) => void }) {
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 {[m.producto1, m.producto2].map((p, i) => (
-                  <>
-                    {i === 1 && <span key="plus" style={{ color: C.textDim, fontSize: 18 }}>+</span>}
-                    <div key={p.tn_product_id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "7px 12px", fontSize: 12, fontFamily: T.font }}>
+                  <React.Fragment key={p.tn_product_id}>
+                    {i === 1 && <span style={{ color: C.textDim, fontSize: 18 }}>+</span>}
+                    <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "7px 12px", fontSize: 12, fontFamily: T.font }}>
                       <span style={{ color: C.textMuted }}>Producto {i + 1} · </span>
                       <span style={{ color: C.text, fontWeight: 500 }}>{p.nombre}</span>
                       <span style={{ color: C.textMuted, fontFamily: T.mono, marginLeft: 8, fontSize: 11 }}>#{p.tn_product_id}</span>
                     </div>
-                  </>
+                  </React.Fragment>
                 ))}
+              </div>
+              <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ background: C.bg, border: `1px solid ${C.pinkBorder}`, borderRadius: 6, padding: "5px 10px", fontSize: 11, fontFamily: T.mono, color: C.pink }}>
+                  Página TN: #{m.tn_match_product_id} · {m.variantMap?.length || 0} combinaciones
+                </div>
+                <SyncMatchBtn matchId={m.id} onToast={onToast} />
               </div>
             </div>
           ))}
