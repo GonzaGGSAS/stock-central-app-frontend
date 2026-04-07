@@ -566,6 +566,30 @@ function VarianteRow({ productoId, variante, onRefresh, onToast }: { productoId:
 }
 
 // ── Producto Card ─────────────────────────────────────────────────────────────
+function SyncVariantesBtn({ productoId, onRefresh, onToast }: { productoId: string; onRefresh: () => void; onToast: (m: string, t?: string) => void }) {
+  const [loading, setLoading] = useState(false);
+  async function handle() {
+    setLoading(true);
+    try {
+      const r = await api("POST", `/productos/${productoId}/sync-variantes`);
+      if (r.added > 0) {
+        onToast(`${r.added} variante(s) importadas desde TN`);
+        onRefresh();
+      } else {
+        onToast(`Sin variantes nuevas (${r.skipped} ya existían)`);
+      }
+    } catch (e: unknown) {
+      onToast(e instanceof Error ? e.message : "Error", "error");
+    }
+    setLoading(false);
+  }
+  return (
+    <button onClick={handle} disabled={loading} style={{ ...btnSecondary, opacity: loading ? 0.6 : 1, fontSize: 12 }}>
+      {loading ? "Importando..." : "↓ Sync variantes TN"}
+    </button>
+  );
+}
+
 function ProductoCard({ producto, onRefresh, onToast }: { producto: Producto; onRefresh: () => void; onToast: (m: string, t?: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [showAddVar, setShowAddVar] = useState(false);
@@ -617,11 +641,12 @@ function ProductoCard({ producto, onRefresh, onToast }: { producto: Producto; on
         </div>
 
         <div style={{ padding: "0 20px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button onClick={() => { setShowAddVar(true); setExpanded(true); }} style={btnSecondary}>+ Variante</button>
             <button onClick={handleSyncAll} disabled={!!syncProgress} style={{ ...btnGreen, opacity: syncProgress ? 0.6 : 1 }}>
               {syncProgress ? `Sync ${syncProgress.current}/${syncProgress.total}` : "↑ Sync todo"}
             </button>
+            <SyncVariantesBtn productoId={producto.id} onRefresh={onRefresh} onToast={onToast} />
             <button onClick={handleDelete} style={{ ...btnRed, marginLeft: "auto" }}>Eliminar</button>
           </div>
           {syncProgress && <ProgressBar current={syncProgress.current} total={syncProgress.total} label={syncProgress.label} />}
@@ -665,7 +690,7 @@ function CreateProductoModal({ onClose, onCreated, showToast, loadTnProducts }: 
 
   async function handleCreate() {
     if (!selected || !nombre) return;
-    const variantesConStock = selected.variants.filter(v => v.stock !== null && v.stock > 0);
+    const variantesConStock = selected.variants; // importar TODAS las variantes
     const total = 1 + variantesConStock.length * 2;
     let paso = 0;
     setProgress({ current: 0, total, label: "Creando producto..." });
@@ -688,8 +713,8 @@ function CreateProductoModal({ onClose, onCreated, showToast, loadTnProducts }: 
     } catch (e: unknown) { showToast(e instanceof Error ? e.message : "Error", "error"); setProgress(null); }
   }
 
-  const variantesConStock = selected?.variants.filter(v => v.stock !== null && v.stock > 0) || [];
-  const variantesSinStock = selected?.variants.filter(v => !v.stock || v.stock === 0) || [];
+  const variantesConStock = selected?.variants || []; // todas las variantes
+  const variantesSinStock: TnVariant[] = []; // ya no se usan, importamos todas
 
   return (
     <Modal title={step === "select" ? "Nuevo producto" : "Confirmar importación"} subtitle={step === "select" ? "Elegí el producto base de Tiendanube" : nombre} onClose={onClose} wide>
@@ -724,7 +749,7 @@ function CreateProductoModal({ onClose, onCreated, showToast, loadTnProducts }: 
           </div>
           <div style={{ ...card, padding: 14, marginBottom: 16 }}>
             <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, fontFamily: T.font }}>
-              Variantes a importar ({variantesConStock.length})
+              Variantes a importar ({variantesConStock.length}) — incluye las sin stock
             </div>
             {variantesConStock.map(v => {
               const vl = v.values?.map(vv => Object.values(vv)[0]).join(" / ") || `Variante ${v.id}`;
@@ -735,8 +760,8 @@ function CreateProductoModal({ onClose, onCreated, showToast, loadTnProducts }: 
                 </div>
               );
             })}
-            {variantesConStock.length === 0 && <p style={{ color: C.textMuted, fontSize: 13, margin: 0, fontFamily: T.font }}>Ninguna variante tiene stock</p>}
-            {variantesSinStock.length > 0 && <p style={{ color: C.textMuted, fontSize: 12, marginTop: 8, marginBottom: 0, fontFamily: T.font }}>{variantesSinStock.length} sin stock no se importarán</p>}
+            {variantesConStock.length === 0 && <p style={{ color: C.textMuted, fontSize: 13, margin: 0, fontFamily: T.font }}>Sin variantes</p>}
+            <p style={{ color: C.textMuted, fontSize: 12, marginTop: 8, marginBottom: 0, fontFamily: T.font }}>Las variantes sin stock se importan con stock 0 y se pueden actualizar luego</p>
           </div>
           {progress && <div style={{ marginBottom: 16 }}><ProgressBar current={progress.current} total={progress.total} label={progress.label} /></div>}
           <div style={{ display: "flex", gap: 10 }}>
