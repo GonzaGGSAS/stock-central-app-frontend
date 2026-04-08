@@ -294,13 +294,17 @@ function Dashboard({ stats, productos }: { stats: Stats | null; productos: Produ
   }
   const maxDay = Math.max(...days.map(d => d.count), 1);
 
+  const unidHoy = todaySales.reduce((a, l) => a + Math.abs(l.delta || 1), 0);
+  const unidSemana = weekSales.reduce((a, l) => a + Math.abs(l.delta || 1), 0);
+  const unidMes = monthSales.reduce((a, l) => a + Math.abs(l.delta || 1), 0);
+
   const statCards = [
-    { label: "Hoy", value: todaySales.reduce((a, l) => a + Math.abs(l.delta || 1), 0), sub: "unidades vendidas", color: C.accent },
-    { label: "Esta semana", value: weekSales.reduce((a, l) => a + Math.abs(l.delta || 1), 0), sub: "unidades", color: C.blue },
-    { label: "Este mes", value: monthSales.reduce((a, l) => a + Math.abs(l.delta || 1), 0), sub: "unidades", color: C.purple },
-    { label: "Reservas activas", value: stats.active_reservations, sub: "en el carrito ahora", color: C.amber },
-    { label: "Sin stock", value: stats.sin_stock, sub: "variantes", color: C.red },
-    { label: "Stock bajo", value: stats.stock_bajo, sub: "≤ 5 unidades", color: C.amber },
+    { label: "Vendido hoy", value: unidHoy, sub: unidHoy === 1 ? "unidad vendida hoy" : `unidades vendidas hoy`, color: C.accent, icon: "↓" },
+    { label: "Esta semana", value: unidSemana, sub: `${weekSales.length} orden${weekSales.length !== 1 ? "es" : ""}`, color: C.blue, icon: "📦" },
+    { label: "Este mes", value: unidMes, sub: `${monthSales.length} orden${monthSales.length !== 1 ? "es" : ""}`, color: C.purple, icon: "📅" },
+    { label: "Carritos activos", value: stats.active_reservations, sub: stats.active_reservations > 0 ? "clientes con producto en carrito" : "nadie tiene nada en carrito", color: C.amber, icon: "🛒" },
+    { label: "Sin stock", value: stats.sin_stock, sub: stats.sin_stock > 0 ? "variantes agotadas — revisar reposición" : "todo con stock ✓", color: stats.sin_stock > 0 ? C.red : C.accent, icon: "⚠" },
+    { label: "Stock bajo", value: stats.stock_bajo, sub: stats.stock_bajo > 0 ? "variantes con ≤ 5 unidades" : "sin alertas de stock", color: stats.stock_bajo > 0 ? C.amber : C.accent, icon: "~" },
   ];
 
   return (
@@ -362,16 +366,24 @@ function Dashboard({ stats, productos }: { stats: Stats | null; productos: Produ
         </div>
       </div>
 
-      {/* Stock crítico */}
+      {/* Stock crítico — lista compacta */}
       {criticas.length > 0 && (
-        <div style={{ ...card, padding: "18px 20px" }}>
-          <div style={{ fontFamily: T.font, fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 14 }}>⚠ Stock crítico</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+        <div style={{ ...card, padding: "16px 20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontFamily: T.body, fontSize: 13, fontWeight: 600, color: C.text }}>⚠ Stock crítico</div>
+            <span style={{ fontFamily: T.mono, fontSize: 11, color: C.textMuted }}>{criticas.length} variante{criticas.length !== 1 ? "s" : ""}</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
             {criticas.map((v, i) => (
-              <div key={i} style={{ background: v.stock === 0 ? C.redDim : C.amberDim, border: `1px solid ${v.stock === 0 ? "#3a1010" : "#3d2c00"}`, borderRadius: 6, padding: "10px 12px" }}>
-                <div style={{ fontFamily: T.body, fontSize: 11, color: C.textMuted, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.producto}</div>
-                <div style={{ fontFamily: T.body, fontSize: 12, color: C.text, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.label}</div>
-                <div style={{ fontFamily: T.mono, fontSize: 18, fontWeight: 700, color: v.stock === 0 ? C.red : C.amber, marginTop: 4 }}>{v.stock === 0 ? "SIN STOCK" : v.stock}</div>
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "7px 0", borderBottom: i < criticas.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: v.stock === 0 ? C.red : C.amber, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontFamily: T.body, fontSize: 12, color: C.textMuted }}>{v.producto} · </span>
+                  <span style={{ fontFamily: T.body, fontSize: 12, color: C.text, fontWeight: 500 }}>{v.label}</span>
+                </div>
+                <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 700, color: v.stock === 0 ? C.red : C.amber, flexShrink: 0 }}>
+                  {v.stock === 0 ? "Sin stock" : `${v.stock} ud.`}
+                </span>
               </div>
             ))}
           </div>
@@ -612,11 +624,15 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
     if (prod1.id === prod2.id) return setErr("Los productos deben ser distintos");
     setSaving(true); setErr("");
     try {
-      const r = await api("POST", "/matchs", {
+      const body: Record<string, unknown> = {
         nombre: nombre.trim(),
         producto1: { tn_product_id: String(prod1.id), nombre: getPName(prod1) },
         producto2: { tn_product_id: String(prod2.id), nombre: getPName(prod2) },
-      });
+      };
+      if (precio) body.precio = parseInt(precio);
+      if (precioPromo) body.precio_promocional = parseInt(precioPromo);
+      if (imagenUrl) body.imagen_url = imagenUrl;
+      const r = await api("POST", "/matchs", body);
       onCreated(r);
     } catch (e: unknown) { setErr(e instanceof Error ? e.message : "Error"); }
     setSaving(false);
@@ -638,6 +654,10 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
     );
   }
 
+  const [precio, setPrecio] = useState("");
+  const [precioPromo, setPrecioPromo] = useState("");
+  const [imagenUrl, setImagenUrl] = useState("");
+
   return (
     <Modal title="Nuevo Match" subtitle="Stock Central creará el producto en Tiendanube" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -648,9 +668,26 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
           <label style={lbl}>Nombre del Match</label>
           <input style={inp} placeholder="ej: COMBO WALL-E + EVA" value={nombre} onChange={e => setNombre(e.target.value)} autoFocus />
         </div>
-        <ProductSelect label="Producto 1" value={prod1} onChange={setProd1} />
-        <div style={{ textAlign: "center", color: C.textMuted, fontFamily: T.mono, fontSize: 18 }}>+</div>
-        <ProductSelect label="Producto 2" value={prod2} onChange={setProd2} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={lbl}>Precio ($)</label>
+            <input style={{ ...inp, fontFamily: T.mono }} type="number" placeholder="130000" value={precio} onChange={e => setPrecio(e.target.value)} />
+          </div>
+          <div>
+            <label style={lbl}>Precio promo ($)</label>
+            <input style={{ ...inp, fontFamily: T.mono }} type="number" placeholder="117000" value={precioPromo} onChange={e => setPrecioPromo(e.target.value)} />
+          </div>
+        </div>
+        <div>
+          <label style={lbl}>URL imagen principal</label>
+          <input style={inp} placeholder="https://..." value={imagenUrl} onChange={e => setImagenUrl(e.target.value)} />
+        </div>
+        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+          <div style={{ color: C.textMuted, fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, fontFamily: T.mono }}>Productos del combo</div>
+          <ProductSelect label="Producto 1" value={prod1} onChange={setProd1} />
+          <div style={{ textAlign: "center", color: C.textMuted, fontFamily: T.mono, fontSize: 18, margin: "8px 0" }}>+</div>
+          <ProductSelect label="Producto 2" value={prod2} onChange={setProd2} />
+        </div>
         {err && <p style={{ color: C.red, fontSize: 12, margin: 0, fontFamily: T.body }}>{err}</p>}
         <button onClick={handle} disabled={saving || loading} style={{ ...btnPrimary, background: C.pink, color: "#fff", opacity: saving || loading ? 0.5 : 1 }}>
           {saving ? "Creando en Tiendanube..." : "Crear Match 💞"}
