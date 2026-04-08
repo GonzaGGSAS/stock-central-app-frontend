@@ -408,6 +408,40 @@ function Dashboard({ stats, productos }: { stats: Stats | null; productos: Produ
     </div>
   );
 }
+
+// Paleta de colores por sesión — subtle
+const SESSION_PALETTE = [
+  { bg: "#0d1f2d", border: "#1a3a52", text: "#4d9fff" },
+  { bg: "#1a0d2e", border: "#33145a", text: "#9d6eff" },
+  { bg: "#1a1000", border: "#3d2800", text: "#ffb800" },
+  { bg: "#0d1f15", border: "#1a3a2a", text: "#00ff88" },
+  { bg: "#1f0d0d", border: "#3a1515", text: "#ff4d4d" },
+  { bg: "#1a001a", border: "#3a003a", text: "#ff4d9e" },
+  { bg: "#0d1a1a", border: "#1a3333", text: "#4dffff" },
+  { bg: "#1a1a00", border: "#333300", text: "#ccff00" },
+];
+
+function getSessionColor(sessionId: string) {
+  if (!sessionId) return null;
+  // Extract session from reason field "Sesión XXXXXXXX ..."
+  const match = sessionId.match(/Sesión ([a-f0-9]{8})/i);
+  const key = match ? match[1] : sessionId;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) & 0xffff;
+  return SESSION_PALETTE[hash % SESSION_PALETTE.length];
+}
+
+function extractSession(reason?: string) {
+  if (!reason) return null;
+  const match = reason.match(/Sesión ([a-f0-9]{8})/i);
+  return match ? match[1] : null;
+}
+
+function extractIP(reason?: string) {
+  if (!reason) return null;
+  const match = reason.match(/·\s*([\d\.]+|IP [^\s·]+)/);
+  return match ? match[1] : null;
+}
 // ── Activity View ─────────────────────────────────────────────────────────────
 function ActivityView({ stats }: { stats: Stats | null }) {
   const [period, setPeriod] = useState<"today" | "week" | "month" | "all">("today");
@@ -500,30 +534,67 @@ function ActivityView({ stats }: { stats: Stats | null }) {
         </div>
       </div>
 
-      {/* Log table */}
+
+
+      {/* Log table — agrupado por sesión */}
       <div style={{ ...card, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "90px 100px 1fr 1fr 60px 50px", gap: 0, borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ display: "grid", gridTemplateColumns: "90px 100px 1fr 1fr 60px 50px", borderBottom: `1px solid ${C.border}` }}>
           {["Fecha", "Acción", "Producto", "Variante", "Delta", "Stock"].map(h => (
             <div key={h} style={{ padding: "10px 14px", color: C.textMuted, fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: T.mono }}>{h}</div>
           ))}
         </div>
         {filtered.length === 0 ? (
           <div style={{ padding: "40px 20px", textAlign: "center", color: C.textMuted, fontFamily: T.body, fontSize: 13 }}>Sin movimientos en este período</div>
-        ) : filtered.slice(0, 50).map((l, i) => {
-          const { label, color } = getActionLabel(l.action);
-          return (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "90px 100px 1fr 1fr 60px 50px", borderBottom: i < filtered.length - 1 ? `1px solid ${C.border}` : "none", background: i % 2 === 0 ? "transparent" : `${C.surface}50` }}>
-              <div style={{ padding: "9px 14px", fontFamily: T.mono, fontSize: 10, color: C.textMuted }}>{fmt(l.ts)}</div>
-              <div style={{ padding: "9px 14px", display: "flex", alignItems: "center" }}><Badge color={color}>{label}</Badge></div>
-              <div style={{ padding: "9px 14px", fontFamily: T.body, fontSize: 12, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.producto}</div>
-              <div style={{ padding: "9px 14px", fontFamily: T.body, fontSize: 12, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.variante}</div>
-              <div style={{ padding: "9px 14px", fontFamily: T.mono, fontSize: 12, fontWeight: 700, color: l.delta !== undefined ? (l.delta > 0 ? C.accent : C.red) : C.textMuted }}>
-                {l.delta !== undefined ? (l.delta > 0 ? "+" : "") + l.delta : "—"}
-              </div>
-              <div style={{ padding: "9px 14px", fontFamily: T.mono, fontSize: 12, color: C.textMuted }}>{l.stock}</div>
-            </div>
-          );
-        })}
+        ) : (() => {
+          // Agrupar por sesión para mostrar separadores visuales
+          let lastSession: string | null = "INIT";
+          return filtered.slice(0, 50).map((l, i) => {
+            const session = extractSession(l.reason);
+            const ip = extractIP(l.reason);
+            const sessionColor = session ? getSessionColor(l.reason || "") : null;
+            const isNewSession = session && session !== lastSession;
+            if (session) lastSession = session;
+
+            return (
+              <React.Fragment key={i}>
+                {/* Separador de sesión */}
+                {isNewSession && sessionColor && (
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "6px 14px",
+                    background: sessionColor.bg,
+                    borderTop: i > 0 ? `2px solid ${sessionColor.border}` : "none",
+                    borderBottom: `1px solid ${sessionColor.border}`,
+                  }}>
+                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: sessionColor.text, flexShrink: 0 }} />
+                    <span style={{ fontFamily: T.mono, fontSize: 10, color: sessionColor.text, fontWeight: 700, letterSpacing: "0.08em" }}>
+                      SESIÓN {session}
+                    </span>
+                    {ip && (
+                      <span style={{ fontFamily: T.mono, fontSize: 10, color: sessionColor.text, opacity: 0.6 }}>· {ip}</span>
+                    )}
+                  </div>
+                )}
+                {/* Fila del log */}
+                <div style={{
+                  display: "grid", gridTemplateColumns: "90px 100px 1fr 1fr 60px 50px",
+                  borderBottom: i < filtered.slice(0,50).length - 1 ? `1px solid ${C.border}` : "none",
+                  background: sessionColor ? `${sessionColor.bg}80` : (i % 2 === 0 ? "transparent" : `${C.surface}50`),
+                  borderLeft: sessionColor ? `2px solid ${sessionColor.border}` : "2px solid transparent",
+                }}>
+                  <div style={{ padding: "8px 14px", fontFamily: T.mono, fontSize: 10, color: C.textMuted }}>{fmt(l.ts)}</div>
+                  <div style={{ padding: "8px 14px", display: "flex", alignItems: "center" }}><Badge color={getActionLabel(l.action).color}>{getActionLabel(l.action).label}</Badge></div>
+                  <div style={{ padding: "8px 14px", fontFamily: T.body, fontSize: 12, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.producto}</div>
+                  <div style={{ padding: "8px 14px", fontFamily: T.body, fontSize: 12, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.variante}</div>
+                  <div style={{ padding: "8px 14px", fontFamily: T.mono, fontSize: 12, fontWeight: 700, color: l.delta !== undefined ? (l.delta > 0 ? C.accent : C.red) : C.textMuted }}>
+                    {l.delta !== undefined ? (l.delta > 0 ? "+" : "") + l.delta : "—"}
+                  </div>
+                  <div style={{ padding: "8px 14px", fontFamily: T.mono, fontSize: 12, color: C.textMuted }}>{l.stock}</div>
+                </div>
+              </React.Fragment>
+            );
+          });
+        })()}
       </div>
     </div>
   );
@@ -543,7 +614,6 @@ function EditMatchModal({ match, onClose, onSaved, onToast }: { match: Match; on
       const body: Record<string, unknown> = { nombre };
       if (precio) body.precio = parseInt(precio);
       if (precioPromo) body.precio_promocional = parseInt(precioPromo);
-      if (imagenUrl) body.imagen_url = imagenUrl;
       const r = await api("PUT", `/matchs/${match.id}`, body);
       onSaved(r);
       onToast("Match actualizado en Tiendanube");
@@ -631,7 +701,6 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
       };
       if (precio) body.precio = parseInt(precio);
       if (precioPromo) body.precio_promocional = parseInt(precioPromo);
-      if (imagenUrl) body.imagen_url = imagenUrl;
       const r = await api("POST", "/matchs", body);
       onCreated(r);
     } catch (e: unknown) { setErr(e instanceof Error ? e.message : "Error"); }
@@ -639,16 +708,36 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
   }
 
   function ProductSelect({ label, value, onChange }: { label: string; value: TnProduct | null; onChange: (p: TnProduct | null) => void }) {
+    const [search, setSearch] = React.useState("");
+    const filtered = tnProducts.filter(p => !EXCLUIR.test(getPName(p)) && (!search || getPName(p).toLowerCase().includes(search.toLowerCase())));
     return (
       <div>
         <label style={lbl}>{label}</label>
-        {loading ? <div style={{ color: C.textMuted, fontSize: 12, fontFamily: T.body, padding: "8px 0" }}>Cargando...</div> : (
-          <select value={value?.id || ""} onChange={e => onChange(tnProducts.find(p => String(p.id) === e.target.value) || null)} style={{ ...inp, cursor: "pointer" }}>
-            <option value="">— Elegir —</option>
-            {tnProducts.filter(p => !EXCLUIR.test(getPName(p))).map(p => (
-              <option key={p.id} value={p.id}>{getPName(p)}</option>
-            ))}
-          </select>
+        {loading ? <div style={{ color: C.textMuted, fontSize: 12, padding: "8px 0" }}>Cargando...</div> : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <input
+              style={{ ...inp, fontSize: 12 }}
+              placeholder="Buscar producto..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            <select
+              value={value?.id || ""}
+              onChange={e => { onChange(tnProducts.find(p => String(p.id) === e.target.value) || null); setSearch(""); }}
+              style={{ ...inp, cursor: "pointer" }}
+              size={Math.min(5, filtered.length + 1)}
+            >
+              <option value="">— Elegir —</option>
+              {filtered.map(p => (
+                <option key={p.id} value={p.id}>{getPName(p)}</option>
+              ))}
+            </select>
+            {value && (
+              <div style={{ fontSize: 11, color: C.accent, fontFamily: T.mono, padding: "2px 4px" }}>
+                ✓ {getPName(value)}
+              </div>
+            )}
+          </div>
         )}
       </div>
     );
@@ -656,7 +745,6 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
   const [precio, setPrecio] = useState("");
   const [precioPromo, setPrecioPromo] = useState("");
-  const [imagenUrl, setImagenUrl] = useState("");
 
   return (
     <Modal title="Nuevo Match" subtitle="Stock Central creará el producto en Tiendanube" onClose={onClose}>
@@ -677,10 +765,6 @@ function CreateMatchModal({ onClose, onCreated }: { onClose: () => void; onCreat
             <label style={lbl}>Precio promo ($)</label>
             <input style={{ ...inp, fontFamily: T.mono }} type="number" placeholder="117000" value={precioPromo} onChange={e => setPrecioPromo(e.target.value)} />
           </div>
-        </div>
-        <div>
-          <label style={lbl}>URL imagen principal</label>
-          <input style={inp} placeholder="https://..." value={imagenUrl} onChange={e => setImagenUrl(e.target.value)} />
         </div>
         <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
           <div style={{ color: C.textMuted, fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, fontFamily: T.mono }}>Productos del combo</div>
@@ -1126,6 +1210,24 @@ function CreateProductoModal({ onClose, onCreated, showToast, loadTnProducts }: 
   );
 }
 
+function RefreshBtn({ onRefresh, onToast }: { onRefresh: () => void; onToast: (m: string, t?: string) => void }) {
+  const [spinning, setSpinning] = useState(false);
+  async function handle() {
+    setSpinning(true);
+    await onRefresh();
+    setTimeout(() => {
+      setSpinning(false);
+      onToast("Datos actualizados ✓");
+    }, 600);
+  }
+  return (
+    <button onClick={handle} disabled={spinning} title="Actualizar datos"
+      style={{ ...btnSecondary, padding: "8px 12px", opacity: spinning ? 0.7 : 1 }}>
+      <span style={{ display: "inline-block", animation: spinning ? "spin 0.6s linear infinite" : "none", fontSize: 14 }}>↻</span>
+    </button>
+  );
+}
+
 function ProductosView({ productos, onRefresh, onToast, loadTnProducts }: { productos: Producto[]; onRefresh: () => void; onToast: (m: string, t?: string) => void; loadTnProducts: () => Promise<TnProduct[]> }) {
   const [search, setSearch] = useState(""); const [showCreate, setShowCreate] = useState(false);
   const filtered = productos.filter(p => !search || p.nombre.toLowerCase().includes(search.toLowerCase()) || p.id.toLowerCase().includes(search.toLowerCase()));
@@ -1134,7 +1236,7 @@ function ProductosView({ productos, onRefresh, onToast, loadTnProducts }: { prod
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div><h2 style={{ margin: "0 0 4px", fontFamily: T.font, fontSize: 22, fontWeight: 800, color: C.text }}>Productos</h2><p style={{ margin: 0, color: C.textMuted, fontSize: 13, fontFamily: T.body }}>SKUs centrales con links a variantes de Tiendanube</p></div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onRefresh} style={{ ...btnSecondary, padding: "8px 12px" }}>↻</button>
+          <RefreshBtn onRefresh={onRefresh} onToast={onToast} />
           <button onClick={() => setShowCreate(true)} style={btnPrimary}>+ Nuevo producto</button>
         </div>
       </div>
@@ -1168,6 +1270,21 @@ function ConfigView({ onSaved }: { onSaved: () => void }) {
   );
 }
 // ── Main App ──────────────────────────────────────────────────────────────────
+function TopBarRefreshBtn({ onRefresh, onToast }: { onRefresh: () => void; onToast: (m: string, t?: string) => void }) {
+  const [spinning, setSpinning] = useState(false);
+  async function handle() {
+    setSpinning(true);
+    await onRefresh();
+    setTimeout(() => { setSpinning(false); onToast("Sincronizado ✓"); }, 600);
+  }
+  return (
+    <button onClick={handle} disabled={spinning} style={{ ...btnSecondary, padding: "5px 10px", fontSize: 11, opacity: spinning ? 0.7 : 1 }}>
+      <span style={{ display: "inline-block", animation: spinning ? "spin 0.6s linear infinite" : "none" }}>↻</span>
+      {" "}{spinning ? "Actualizando..." : "Actualizar"}
+    </button>
+  );
+}
+
 export default function App() {
   const [view, setView] = useState<"loading" | "setup" | "app">("loading");
   const [nav, setNav] = useState<NavSection>("dashboard");
@@ -1250,7 +1367,7 @@ export default function App() {
                 {stats.active_reservations} reserva(s)
               </span>
             )}
-            <button onClick={loadData} style={{ ...btnSecondary, padding: "5px 10px", fontSize: 11 }}>↻ Actualizar</button>
+            <TopBarRefreshBtn onRefresh={loadData} onToast={showToast} />
           </div>
         </div>
 
