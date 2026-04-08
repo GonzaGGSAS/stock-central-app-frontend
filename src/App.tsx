@@ -5,7 +5,7 @@ const API = "https://stock-central-production.up.railway.app/api";
 
 const fontLink = document.createElement("link");
 fontLink.rel = "stylesheet";
-fontLink.href = "https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600&display=swap";
+fontLink.href = "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500;700&display=swapp";
 document.head.appendChild(fontLink);
 
 async function api(method: string, path: string, body?: unknown) {
@@ -68,7 +68,7 @@ const C = {
   purpleDim: "#0d0520",
 };
 
-const T = { font: "'Syne', sans-serif", body: "'Inter', sans-serif", mono: "'IBM Plex Mono', monospace" };
+const T = { font: "'DM Sans', sans-serif", body: "'Inter', sans-serif", mono: "'DM Mono', monospace" };
 
 const inp: CSSProperties = {
   background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6,
@@ -422,14 +422,7 @@ function ActivityView({ stats }: { stats: Stats | null }) {
   const reservas = periodLog.filter(l => l.action === "reserved");
   const liberados = periodLog.filter(l => ["reservation_released", "reservation_expired"].includes(l.action));
 
-  const tabBtn = (val: string, label: string, current: string, setter: (v: any) => void) => (
-    <button onClick={() => setter(val)} style={{
-      padding: "6px 14px", borderRadius: 5, border: `1px solid ${current === val ? C.accentBorder : C.border}`,
-      background: current === val ? C.accentDim : "transparent",
-      color: current === val ? C.accent : C.textMuted,
-      fontSize: 12, fontFamily: T.body, cursor: "pointer", fontWeight: current === val ? 600 : 400,
-    }}>{label}</button>
-  );
+
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -454,17 +447,44 @@ function ActivityView({ stats }: { stats: Stats | null }) {
       </div>
 
       {/* Filters */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", gap: 4 }}>
-          {(["today", "week", "month", "all"] as const).map(p =>
-            tabBtn(p, p === "today" ? "Hoy" : p === "week" ? "Semana" : p === "month" ? "Mes" : "Todo", period, setPeriod)
-          )}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        {/* Period selector — pill style */}
+        <div style={{ display: "flex", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 3, gap: 2 }}>
+          {([
+            { val: "today", label: "Hoy" },
+            { val: "week", label: "Semana" },
+            { val: "month", label: "Mes" },
+            { val: "all", label: "Todo" },
+          ] as const).map(({ val, label }) => (
+            <button key={val} onClick={() => setPeriod(val)} style={{
+              padding: "5px 14px", borderRadius: 6, border: "none", cursor: "pointer",
+              background: period === val ? C.text : "transparent",
+              color: period === val ? C.bg : C.textMuted,
+              fontSize: 12, fontFamily: T.body, fontWeight: period === val ? 700 : 400,
+              transition: "all 0.15s",
+            }}>{label}</button>
+          ))}
         </div>
-        <div style={{ width: 1, background: C.border }} />
-        <div style={{ display: "flex", gap: 4 }}>
-          {(["all", "sale", "reserved", "released"] as const).map(f =>
-            tabBtn(f, f === "all" ? "Todos" : f === "sale" ? "Ventas" : f === "reserved" ? "Reservados" : "Liberados", filter, setFilter)
-          )}
+
+        {/* Divider */}
+        <div style={{ width: 1, height: 28, background: C.border }} />
+
+        {/* Type filter — colored chips */}
+        <div style={{ display: "flex", gap: 6 }}>
+          {([
+            { val: "all", label: "Todos", color: C.textMuted, bg: C.surface, border: C.border, activeBg: C.surfaceHover, activeColor: C.text, activeBorder: C.borderHover },
+            { val: "sale", label: "⬤ Ventas", color: C.red, bg: C.redDim, border: "#3a1010", activeBg: C.red, activeColor: C.bg, activeBorder: C.red },
+            { val: "reserved", label: "⬤ Reservados", color: C.amber, bg: C.amberDim, border: "#3d2c00", activeBg: C.amber, activeColor: C.bg, activeBorder: C.amber },
+            { val: "released", label: "⬤ Liberados", color: C.accent, bg: C.accentDim, border: C.accentBorder, activeBg: C.accent, activeColor: C.bg, activeBorder: C.accent },
+          ] as const).map(({ val, label, color, bg, border, activeBg, activeColor, activeBorder }) => (
+            <button key={val} onClick={() => setFilter(val)} style={{
+              padding: "5px 13px", borderRadius: 20, border: `1px solid ${filter === val ? activeBorder : border}`,
+              background: filter === val ? activeBg : bg,
+              color: filter === val ? activeColor : color,
+              fontSize: 11, fontFamily: T.mono, fontWeight: 600, cursor: "pointer",
+              letterSpacing: "0.04em", transition: "all 0.15s",
+            }}>{label}</button>
+          ))}
         </div>
       </div>
 
