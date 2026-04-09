@@ -21,8 +21,11 @@ async function api(method: string, path: string, body?: unknown) {
 
 function fmt(ts: string) {
   const d = new Date(ts);
-  return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" }) + " " +
-    d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const hour = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${day}/${month}  ${hour}:${min}`;
 }
 function fmtCurrency(n: number) { return "$" + n.toLocaleString("es-AR"); }
 function isToday(ts: string) {
@@ -396,7 +399,7 @@ function Dashboard({ stats, productos }: { stats: Stats | null; productos: Produ
           <div style={{ fontFamily: T.font, fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 14 }}>Últimas ventas</div>
           {salesLog.slice(0, 8).map((l, i) => (
             <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "8px 0", borderBottom: i < Math.min(salesLog.length, 8) - 1 ? `1px solid ${C.border}` : "none" }}>
-              <span style={{ color: C.textMuted, fontFamily: T.mono, fontSize: 10, minWidth: 80, flexShrink: 0 }}>{fmt(l.ts)}</span>
+              <span style={{ color: C.textMuted, fontFamily: T.body, fontSize: 12, minWidth: 90, flexShrink: 0 }}>{fmt(l.ts)}</span>
               <span style={{ color: C.text, fontSize: 12, fontFamily: T.body, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.producto} · {l.variante}</span>
               {l.order_id && <span style={{ fontFamily: T.mono, fontSize: 10, color: C.textMuted }}>#{l.order_id}</span>}
               <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 700, color: C.red, flexShrink: 0 }}>{l.delta}</span>
@@ -582,7 +585,7 @@ function ActivityView({ stats }: { stats: Stats | null }) {
                   background: sessionColor ? `${sessionColor.bg}80` : (i % 2 === 0 ? "transparent" : `${C.surface}50`),
                   borderLeft: sessionColor ? `2px solid ${sessionColor.border}` : "2px solid transparent",
                 }}>
-                  <div style={{ padding: "8px 14px", fontFamily: T.mono, fontSize: 10, color: C.textMuted }}>{fmt(l.ts)}</div>
+                  <div style={{ padding: "8px 14px", fontFamily: T.body, fontSize: 12, color: C.textMuted, whiteSpace: "nowrap" }}>{fmt(l.ts)}</div>
                   <div style={{ padding: "8px 14px", display: "flex", alignItems: "center" }}><Badge color={getActionLabel(l.action).color}>{getActionLabel(l.action).label}</Badge></div>
                   <div style={{ padding: "8px 14px", fontFamily: T.body, fontSize: 12, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.producto}</div>
                   <div style={{ padding: "8px 14px", fontFamily: T.body, fontSize: 12, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.variante}</div>
@@ -1053,7 +1056,7 @@ function VarianteRow({ productoId, variante, onRefresh, onToast }: { productoId:
               const { label, color } = getActionLabel(l.action);
               return (
                 <div key={i} style={{ display: "flex", gap: 8, fontSize: 11, padding: "4px 0", borderBottom: i < Math.min(variante.log.length, 10) - 1 ? `1px solid ${C.border}` : "none", alignItems: "center" }}>
-                  <span style={{ fontFamily: T.mono, color: C.textMuted, fontSize: 10, minWidth: 80 }}>{fmt(l.ts)}</span>
+                  <span style={{ fontFamily: T.body, color: C.textMuted, fontSize: 11, minWidth: 90 }}>{fmt(l.ts)}</span>
                   <Badge color={color}>{label}</Badge>
                   {l.delta !== undefined && <span style={{ fontFamily: T.mono, color: l.delta > 0 ? C.accent : C.red, fontSize: 11, fontWeight: 600 }}>{l.delta > 0 ? "+" : ""}{l.delta}</span>}
                   <span style={{ color: C.textMuted, fontFamily: T.body }}>→ <span style={{ fontFamily: T.mono, color: C.text }}>{l.stock}</span></span>
